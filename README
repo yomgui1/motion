@@ -1,0 +1,16 @@
+
+=== Features Detectors ===
+
+* FAST: (C) Edward Rosten.
+- license: ~MIT
+- sources (v2.1) from http://mi.eng.cam.ac.uk/~er258/work/fast.html
+- modifications:
+ -> safe malloc() (API may return NULL now).
+ -> code cleanup.
+
+=== Features Matching ===
+
+* FLANN: (C) David G. Lowe and Marius Muja
+- license: BSD (~MIT)
+- sources (v1.6.8) from http://www.cs.ubc.ca/~mariusm/index.php/FLANN/FLANN
+- modifications:
