@@ -5,8 +5,11 @@
 - license: ~MIT
 - sources (v2.1) from http://mi.eng.cam.ac.uk/~er258/work/fast.html
 - modifications:
+ -> non fast_9 code removed.
  -> safe malloc() (API may return NULL now).
- -> code cleanup.
+ -> code re-write.
+ -> added fast9_detect_limited() function to limit the number of returned
+    features to N best ones, this function permits nonmax suppression as option.
 
 === Features Matching ===
 
