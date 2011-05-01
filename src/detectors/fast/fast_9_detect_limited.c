@@ -19,9 +19,9 @@ static int corner_item_cmp(const void *left, const void *right)
     item1 = left;
     item2 = right;
 
-    if (item1->score < item2->score)
+    if (item1->score > item2->score)
         return -1;
-    else if (item1->score > item2->score)
+    else if (item1->score < item2->score)
         return 1;
 
     return 0;
