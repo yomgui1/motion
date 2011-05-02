@@ -1,8 +1,6 @@
 #include "handler_intern.h"
 
-#define __MORPHOS_SHAREDLIBS
-#include <libraries/png.h>
-#include <proto/png.h>
+#include <png.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -19,7 +17,7 @@ static int imt_png_recognize_from_file(const char *filename)
 {
 	char *dot = strrchr(filename, '.');
 	
-	if (dot && !stricmp(dot, ".png"))
+	if (dot && !strcasecmp(dot, ".png"))
 		return 1;
 	return 0;
 }
@@ -117,12 +115,9 @@ static int imt_png_load_from_file(const char *filename, IMT_Image **p_image, voi
 		}
 		
 		/* IMT Image allocation */
-		image = IMT_AllocImage(fmt, width, height, bytesperpixel, bytesperpixel*width, NULL);
-		if (NULL == image)
-		{
-			err = IMT_ERR_MEM;
+		err = IMT_AllocImage(&image, fmt, width, height, 0, NULL);
+		if (err)
 			longjmp(png_jmpbuf(png_ptr), 1);
-		}
 			
 		*p_image = image;
 		

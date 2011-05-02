@@ -3,11 +3,18 @@ OS = $(shell uname)
 CC = gcc
 AR = ar
 
-CFLAGS = -noixemul -g -Wall -Wno-pointer-sign -Wl,--traditional-format -O2 -mmultiple $(INCLUDES)
+CFLAGS = $(OPTS)
+CPPFLAGS = -g -Wall $(WARNS) -O2 $(OPTS) $(INCLUDES) $(DEFINES)
 ARFLAGS = cru
 
 INCLUDES = -I. -Idetectors
 LIBS = -lpng
+
+ifeq ("$(OS)","MorphOS")
+OPTS = -mmultiple -noixemul
+WARNS = -Wno-pointer-sign -Wl,--traditional-format
+DEFINES = -D__MORPHOS_SHAREDLIBS=1
+endif
 
 FAST_DIR = detectors/fast
 FAST_SRC = \
@@ -20,30 +27,46 @@ FAST_SRC = \
 
 ALL_OBJS += $(FAST_SRC:%.c=%.o)
 
+MAT_DIR = math
+MAT_SRC = \
+	$(MAT_DIR)/array.c \
+	$(MAT_DIR)/convolution.c
+
+MAT_INCS = \
+	$(MAT_DIR)/array.h \
+	$(MAT_DIR)/convolution.h
+
+ALL_OBJS += $(MAT_SRC:%.c=%.o)
+ALL_INCS += $(MAT_INCS)
+
 IMT_DIR = imtool
 IMT_SRC = \
 	$(IMT_DIR)/error.c \
 	$(IMT_DIR)/image.c \
 	$(IMT_DIR)/handler.c \
 	$(IMT_DIR)/handler_png.c
-	
+
 ifeq ("$(OS)","MorphOS")
 IMT_SRC += $(IMT_DIR)/handler_sys_morphos.c
+else
+IMT_SRC += $(IMT_DIR)/handler_sys_generic.c
 endif
 
 ALL_OBJS += $(IMT_SRC:%.c=%.o)
 
 
-all : libmotion.a detectors/tests/test_fast
+all : libmotion.a
+
+tests: detectors/fast/tests math/tests
 
 clean:
 	rm libmotion.a $(ALL_OBJS)
 
 .c.o:
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CPPFLAGS) -c -o $@ $<
 
 libmotion.a: $(ALL_OBJS)
 	$(AR) $(ARFLAGS) $@ $^
-	
-%/test_fast: %/test_fast.o libmotion.a
-	$(CC) $(CFLAGS) -o $@ $^ -L. -lmotion $(LIBS) 
+
+%/tests: %/tests.o libmotion.a $(ALL_INCS)
+	$(CC) $(CFLAGS) -o $@ $< -L. -lmotion $(LIBS)

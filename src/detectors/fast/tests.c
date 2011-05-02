@@ -10,8 +10,11 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-#ifdef __MORPHOS__
-static u_quad_t getcounter(void)
+/* These READ_TIMESTAMP implementations have been taken from Python source code */
+#if defined(__ppc__)
+#define READ_TIMESTAMP(var) (var = ppc_getcounter())
+
+static u_quad_t ppc_getcounter(void)
 {
     register u_int32_t tbu, tb, tbu2;
 
@@ -23,6 +26,22 @@ static u_quad_t getcounter(void)
 
     return (((u_quad_t) tbu) << 32) + tb;
 }
+
+#elif defined(__i386__)
+
+#define READ_TIMESTAMP(val) \
+     __asm__ __volatile__("rdtsc" : "=A" (val))
+
+#elif defined(__x86_64__)
+
+#define READ_TIMESTAMP(val) \
+    __asm__ __volatile__("rdtsc" : \
+                         "=a" (((int*)&(val))[0]), "=d" (((int*)&(val))[1]));
+
+#else
+
+#error "Don't know how to implement timestamp counter for this architecture"
+
 #endif
 
 int main(int argc, char **argv)
@@ -57,9 +76,10 @@ int main(int argc, char **argv)
 		
             printf("Trying simple fast9 detection... ");
             num_corners = -1;
-            t0 = getcounter();
+            READ_TIMESTAMP(t0);
             corners = fast9_detect(gray->data, gray->width, gray->height, gray->stride, threshold, &num_corners);
-            t1 = getcounter() - t0;
+            READ_TIMESTAMP(t1);
+            t1 -= t0;
 
             if (NULL == corners)
                 printf("[FAILED] (NULL result)\n");
@@ -68,7 +88,7 @@ int main(int argc, char **argv)
             else if (num_corners == 0)
                 printf("[WARNING] (no corners found)\n");
             else
-                printf("[OK] (%u corners in %gs)\n", num_corners, t1*4/166005898.);
+                printf("[OK] (%u corners in %llu ticks)\n", num_corners, t1);
             
             printf("Trying fast9 detection + nonmax removal... ");
             num_nonmax_corners = -1;
@@ -130,12 +150,13 @@ int main(int argc, char **argv)
 
                 free(limited_corners);
             }
-					
+
 			if (argc >= 4)
 			{
 				int i;
 				FILE *outfile;
 				
+                printf("Saving non-max points under '%s'\n", argv[3]);
 				outfile = fopen(argv[3], "w");
 				fprintf(outfile, "%u %u %u\n", gray->width, gray->height, num_nonmax_corners);
 				for (i=0; i < num_nonmax_corners; i++)

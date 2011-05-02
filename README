@@ -2,18 +2,28 @@
 === Features Detectors ===
 
 * FAST: (C) Edward Rosten.
+
 - license: ~MIT
 - sources (v2.1) from http://mi.eng.cam.ac.uk/~er258/work/fast.html
-- modifications:
+- changes:
  -> non fast_9 code removed.
  -> safe malloc() (API may return NULL now).
- -> code re-write.
+ -> code adapted for better integration.
  -> added fast9_detect_limited() function to limit the number of returned
     features to N best ones, this function permits nonmax suppression as option.
 
+
 === Features Matching ===
 
+* KLT: Stan Birchfield and Thorsten Thormaehlen.
+
+- license: Public Domain
+- sources (v1.3.4) from http://www.ces.clemson.edu/~stb/klt/
+- changes:
+
+
 * FLANN: (C) David G. Lowe and Marius Muja
+
 - license: BSD (~MIT)
 - sources (v1.6.8) from http://www.cs.ubc.ca/~mariusm/index.php/FLANN/FLANN
-- modifications:
+- changes:

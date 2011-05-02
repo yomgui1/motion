@@ -1,4 +1,3 @@
-//#define __NOLIBBASE__
 #define USE_INLINE_STDARG
 
 #include "handler_intern.h"
