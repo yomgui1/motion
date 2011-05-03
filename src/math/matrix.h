@@ -7,8 +7,8 @@
 typedef struct MAT_Matrix
 {
     MAT_Array array;
-    unsigned int width;
-    unsigned int height;
+    unsigned int ncols;
+    unsigned int nrows;
 } MAT_Matrix;
 
 #endif /* MAT_MATRIX_H */
