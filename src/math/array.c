@@ -53,6 +53,31 @@ MAT_Array *MAT_DupArray(MAT_Array *src)
     return dst;
 }
 
+MAT_Array *MAT_ExtractArrayPlan(MAT_Array *src, unsigned int max, unsigned int index)
+{
+    MAT_Array *dst;
+    unsigned int i;
+
+    dst = MAT_AllocArray(src->width/max, src->type, 0);
+    if (NULL != dst)
+    {
+        switch (src->type)
+        {
+            case MAT_ARRAYTYPE_FLOAT:
+                for (i=0; i < dst->width; i++)
+                    dst->data.float_ptr[i] = src->data.float_ptr[i*max+index];
+                break;
+
+            case MAT_ARRAYTYPE_DOUBLE:
+                for (i=0; i < dst->width; i++)
+                    dst->data.double_ptr[i] = src->data.double_ptr[i*max+index];
+                break;
+        }
+    }
+
+    return dst;
+}
+
 void MAT_ScalarAddArray(MAT_Array *array, double value)
 {
     int i;

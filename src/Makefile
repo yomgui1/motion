@@ -7,7 +7,7 @@ CFLAGS = $(OPTS)
 CPPFLAGS = 2>&1 -g -Wall $(WARNS) -O2 $(OPTS) $(INCLUDES) $(DEFINES)
 ARFLAGS = cru
 
-INCLUDES = -I. -Idetectors
+INCLUDES = -I. -Idetectors -Imatchers
 LIBS = -lpng
 
 ifeq ("$(OS)","MorphOS")
@@ -53,6 +53,14 @@ IMT_SRC += $(IMT_DIR)/handler_sys_generic.c
 endif
 
 ALL_OBJS += $(IMT_SRC:%.c=%.o)
+
+KLT_DIR = matchers/klt
+KLT_SRC = \
+	$(KLT_DIR)/klt.c
+KLT_INCS = \
+	$(KLT_DIR)/context.h
+ALL_OBJS += $(KLT_SRC:%.c=%.o)
+ALL_INCS += $(KLT_INCS)
 
 
 all : libmotion.a

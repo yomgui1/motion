@@ -28,6 +28,7 @@ extern int MAT_SameArrayType(MAT_Array *left, MAT_Array *right);
 extern MAT_Array *MAT_AllocArray(unsigned int width, int type, int clear);
 extern void MAT_FreeArray(MAT_Array *array);
 extern MAT_Array *MAT_DupArray(MAT_Array *src);
+extern MAT_Array *MAT_ExtractArrayPlan(MAT_Array *src, unsigned int max, unsigned int index);
 extern void MAT_ScalarAddArray(MAT_Array *array, double value);
 extern void MAT_ScalarMulArray(MAT_Array *array, double value);
 extern void MAT_ScalarDivArray(MAT_Array *array, double value);

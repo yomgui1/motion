@@ -136,12 +136,13 @@ int IMT_GetChannels(IMT_Format fmt)
     }
 }
 
-int IMT_AllocImage(IMT_Image ** p_image,
-                   IMT_Format   fmt,
-                   unsigned int width,
-                   unsigned int height,
-                   unsigned int padding,
-                   void *       options)
+int IMT_AllocImage(
+    IMT_Image ** p_image,
+    IMT_Format   fmt,
+    unsigned int width,
+    unsigned int height,
+    unsigned int padding,
+    void *       options)
 {
 	IMT_Image *image;
     int bpp;
@@ -167,7 +168,6 @@ int IMT_AllocImage(IMT_Image ** p_image,
         image->levels = 0;
         image->floatimage = NULL;
         image->subimages = NULL;
-        image->derivatives = NULL;
 
         *p_image = image;
 	}
@@ -181,14 +181,14 @@ void IMT_FlushImage(IMT_Image *image)
 
     if (NULL != image->subimages)
     {
-        for (i=0; i < image->levels; i++)
+        for (i=0; i <= image->levels; i++)
             MAT_FreeArray(image->subimages[i]);
         free(image->subimages);
+        image->subimages = NULL;
         image->levels = 0;
     }
 
     MAT_FreeArray(image->floatimage);
-    MAT_FreeArray(image->derivatives);
 }
 
 void IMT_FreeImage(IMT_Image *image)
@@ -200,11 +200,12 @@ void IMT_FreeImage(IMT_Image *image)
     }
 }
 
-int IMT_ImageFromFloatArray(MAT_Array *src,
-                            IMT_Image **p_image,
-                            IMT_Format format,
-                            unsigned int width,
-                            unsigned int height)
+int IMT_ImageFromFloatArray(
+    MAT_Array *src,
+    IMT_Image **p_image,
+    IMT_Format format,
+    unsigned int width,
+    unsigned int height)
 {
     int err;
 
@@ -431,7 +432,7 @@ int IMT_ImageConvolve(MAT_Array *kernel, IMT_Image *input, IMT_Image *output)
     /* Works only on gray 8bits images */
     if (input->format != IMT_PIXFMT_GRAY8)
         return -1;
-	
+
 	/* Make sure the images have float data arrays */
 	if (NULL == IMT_GetFloatImage(input, 0)) return 1;
 	if (NULL == IMT_GetFloatImage(output, 1)) return 1;
@@ -439,16 +440,14 @@ int IMT_ImageConvolve(MAT_Array *kernel, IMT_Image *input, IMT_Image *output)
 	tmp = MAT_AllocArray(input->width * input->height, input->floatimage->type, 0);
 	if (NULL == tmp) return 1;
 	
-    res = MAT_ArrayConvolve(kernel, input->floatimage, tmp, 1);
-    res |= MAT_ArrayConvolve(kernel, tmp, output->floatimage, output->width);
-
+    res = MAT_ArrayConvolve2D(kernel, input->floatimage, tmp, input->width, input->height);
 	MAT_FreeArray(tmp);
 	return res;
 }
 
 int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, double sigma)
 {
-    MAT_Array *level0, *subimage, *kernel=NULL;
+    MAT_Array *base, *subimage, *kernel=NULL, *derivatives=NULL;
     unsigned int x, y, i, sub_width, sub_height, level=0;
     float *src, *dst;
 
@@ -456,58 +455,75 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
     if (image->format != IMT_PIXFMT_GRAY8)
         return -1;
 
-    /* Make sure that level-0 exists, same image with float channels */
-    level0 = IMT_GetFloatImage(image, 0);
-    if (NULL == level0)
+    /* Make sure a float version exists */
+    base = IMT_GetFloatImage(image, 0);
+    if (NULL == base)
         return -1;
 
-    /* Check if subimages already exist and alloc more rooms if needed */
-    if (image->levels < max_level)
+    /* compute gaussian & derivatives kernels */
+    MAT_ZMGaussianKernel(sigma, &kernel, &derivatives);
+    if (NULL == kernel)
+        return -1;
+
+    /* Check if level 0 exists, create it if not */
+    if (NULL == image->subimages)
     {
-        void *mem = realloc(image->subimages, max_level * sizeof(MAT_Array*));
+        image->levels = 0;
+        image->subimages = malloc((max_level+1) * sizeof(MAT_Array*));
+        if (NULL == image->subimages) return -1;
 
-        if (NULL == mem)
-            return image->levels;
+        subimage = image->subimages[0] = MAT_AllocArray(3 * image->width * image->height, MAT_ARRAYTYPE_FLOAT, 0);
+        if (NULL == subimage)
+        {
+            free(image->subimages);
+            return -1;
+        }
 
-        image->subimages = mem;
+        MAT_ArrayConvolveAndDerivative2D(kernel, derivatives,
+                                         base, subimage,
+                                         image->width, image->height);
+    }
+    else
+    {
+        /* Check if enough levels exist or realloc more rooms if needed */
+        if (image->levels < max_level)
+        {
+            void *mem = realloc(image->subimages, (max_level+1) * sizeof(MAT_Array*));
+            if (NULL == mem) return image->levels;
+            image->subimages = mem;
+        }
     }
 
-    /* Start with the highest level stored (we suppose non-null image dimensions) */
-    sub_width = image->width >> image->levels;
-    sub_height = image->height >> image->levels;
-    if (image->levels > 0)
-        src = image->subimages[image->levels-1]->data.float_ptr;
-    else
-        src = level0->data.float_ptr;
-
-    /* if gaussian blur needed, compute kernels */
-    if (sigma > 0.0)
-        MAT_ZMGaussianKernel(sigma, &kernel, &image->derivatives);
-
-    /* Down-sample successive levels while subimage's dimensions are greater than 1
-     * or reach the maximal requested level.
-     */
+    /* Start with the highest level stored */
     level = image->levels;
-    //printf("\nStarting at level %u, size=%ux%u, max_level=%u\n", level, sub_width, sub_height, max_level);
+    sub_width = image->width >> level;
+    sub_height = image->height >> level;
+    src = base->data.float_ptr;
+
+    /* Downsample by 2 successive subimages while subimage's dimensions are greater than 1
+     * or until we reach the maximal requested level.
+     */
+    printf("\nStarting at level %u, size=%ux%u, max_level=%u\n", level, sub_width, sub_height, max_level);
     while ((level < max_level) && (sub_width > 1) && (sub_height > 1))
     {
         unsigned int width=sub_width;
 
+        level++;
         sub_width >>= 1;
         sub_height >>= 1;
 
-        subimage = MAT_AllocArray(sub_width*sub_height, MAT_ARRAYTYPE_FLOAT, 0);
-        if (NULL == subimage)
+        subimage = MAT_AllocArray(sub_width * sub_height, MAT_ARRAYTYPE_FLOAT, 0);
+        image->subimages[level] = MAT_AllocArray(3 * subimage->width, MAT_ARRAYTYPE_FLOAT, 0);
+        if ((NULL == subimage) || (NULL == image->subimages[level]))
         {
-            image->levels = level;
-            return IMT_ERR_MEM;
+            MAT_FreeArray(subimage);
+            MAT_FreeArray(image->subimages[level]);
+            level--;
+            break;
         }
 
-        level++;
-        image->subimages[level-1] = subimage;
-
+        printf("downsampling @ %ux%u...", sub_width, sub_height);
         dst = subimage->data.float_ptr;
-        //printf("downsampling @ %ux%u...", sub_width, sub_height);
         for (y=0; y < sub_height; y++, src += 2*width, dst += sub_width)
         {
             float *src_pixel = src;
@@ -526,35 +542,22 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
                 *dst_pixel = sum / 4.f;
             }
         }
-        //printf("done\n");
+        printf("done\n");
 
-        if (NULL != kernel)
-        {
-            MAT_Array *tmp;
-
-            //printf("Blur...");
-
-            tmp = MAT_AllocArray(subimage->width, subimage->type, 0);
-            if (NULL != tmp)
-            {
-                MAT_ArrayConvolve(kernel, subimage, tmp, 1);
-                MAT_ArrayConvolve(kernel, tmp, subimage, sub_width);
-                MAT_FreeArray(tmp);
-            }
-            //printf("done\n");
-        }
+        /* Apply gaussian & derivatives kernels */
+        MAT_ArrayConvolveAndDerivative2D(kernel, derivatives, subimage, image->subimages[level], sub_width, sub_height);
 
         src = subimage->data.float_ptr;
     }
 
-    //printf("Reach level: %u\n", level);
+    printf("Reached level: %u\n", level);
 
-    /* adapt subimages array size */
+    /* reduce the memory usage */
     if (level < image->levels)
     {
         void *mem;
 
-        for (i=level; i < image->levels; i++)
+        for (i=level+1; i <= image->levels; i++)
         {
             MAT_FreeArray(image->subimages[i]);
             image->subimages[i] = NULL;

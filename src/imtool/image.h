@@ -23,12 +23,11 @@ typedef struct IMT_Image
     unsigned int height;
     unsigned int bpp;
     unsigned int stride;
-    unsigned int levels;        /* Number of MAT_Array stored by subimages array, zero is a valid value. */
+    unsigned int levels;        /* Number-1 of MAT_Array stored by subimages array, not used if subimages is NULL */
     
     void *       data;          /* Raw image data */
     MAT_Array *  floatimage;    /* Same image but all channels converted as float, NULL if not used. */
     MAT_Array ** subimages;     /* Array of levels 'MAT_Array *'. Used for pyramidal representation, NULL if not used */
-    MAT_Array *  derivatives;
 } IMT_Image;
 
 extern int IMT_AllocImage(IMT_Image **p_image,

@@ -92,7 +92,7 @@ int main(int argc, char **argv)
 		printf("[OK]\n");
 
     printf("Create pyramidal data of input image ");
-    level = IMT_GeneratePyramidalSubImages(gray, 3, sigma);
+    level = IMT_GeneratePyramidalSubImages(gray, 0, sigma);
 	if (level < 0)
 	{
 		printf("[FAILED]\n");
@@ -101,14 +101,22 @@ int main(int argc, char **argv)
 	else
 		printf("[OK]\n");
 
-    for (i=0; i < gray->levels; i++)
+    for (i=0; i <= gray->levels; i++)
     {
         IMT_Image *tmp;
+        MAT_Array *pixel_plan;
 
-        printf("Converting subimage %u ", i);
-        err = IMT_ImageFromFloatArray(gray->subimages[i], &tmp,
-                                      gray->format, gray->width >> (i+1),
-                                      gray->height >> (i+1));
+        /* Subimages are arrays of 3d vectors (pixel, dpx, dpy) */
+        pixel_plan = MAT_ExtractArrayPlan(gray->subimages[i], 3, 0);
+        
+        printf("Converting subimage %u  (%ux%u)", i, gray->width >> i, gray->height >> i);
+        err = IMT_ImageFromFloatArray(pixel_plan,
+                                      &tmp,
+                                      gray->format,
+                                      gray->width >> i,
+                                      gray->height >> i);
+        MAT_FreeArray(pixel_plan);
+
         if (err)
         {
             printf("[FAILED], %s\n", IMT_GetErrorString(err));
@@ -128,6 +136,7 @@ int main(int argc, char **argv)
                 printf("[FAILED], %s\n", IMT_GetErrorString(err));
             else
                 printf("[OK]\n");
+            
             IMT_FreeImage(tmp);
         }
     }
