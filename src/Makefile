@@ -57,7 +57,10 @@ ALL_OBJS += $(IMT_SRC:%.c=%.o)
 
 all : libmotion.a
 
-tests: detectors/fast/tests math/tests
+tests: \
+	detectors/fast/tests \
+	math/tests \
+	imtool/tests
 
 clean:
 	rm libmotion.a $(ALL_OBJS)

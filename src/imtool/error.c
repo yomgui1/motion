@@ -1,6 +1,6 @@
 #include "error.h"
 
-const char *IMT_get_error_string(int err)
+const char *IMT_GetErrorString(int err)
 {
     const char *s;
 

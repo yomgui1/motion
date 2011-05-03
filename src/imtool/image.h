@@ -1,7 +1,10 @@
 #ifndef IMT_IMAGE_H
 #define IMT_IMAGE_H
 
-#define UBYTE2FLOAT(b) ((b)/255.f)
+#include <math/array.h>
+
+#define UBYTE2FLOAT(v) ((unsigned char)(v)/255.f)
+#define FLOAT2UBYTE(v) ((unsigned char)((float)(v)*255.f))
 
 typedef enum IMT_Format
 {
@@ -19,14 +22,14 @@ typedef enum IMT_Format
 typedef struct IMT_Image
 {
     void *data;
-    float *float_data;   /* Same image but float channels, NULL if not used. */
     IMT_Format format;
     unsigned int width;
     unsigned int height;
     unsigned int bpp;
     unsigned int stride;
-    unsigned int float_stride;
     unsigned int channels;
+    
+    MAT_Array *float_array;   /* Same image but using float channels, NULL if not used. */
 } IMT_Image;
 
 extern int IMT_AllocImage(IMT_Image **p_image,
@@ -37,6 +40,8 @@ extern int IMT_AllocImage(IMT_Image **p_image,
                           void *options);
 extern void IMT_FreeImage(IMT_Image *image);
 extern int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst);
-extern int IMT_GenerateFloatData(IMT_Image *image);
+extern int IMT_GenerateFloatData(IMT_Image *image, int empty);
+extern int IMT_FromFloatData(IMT_Image *image);
+extern int IMT_ImageConvolve(MAT_Array *kernel, IMT_Image *input, IMT_Image *output);
 
 #endif /* IMT_IMAGE_H */

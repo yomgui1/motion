@@ -11,7 +11,7 @@
 #include <sys/types.h>
 
 /* These READ_TIMESTAMP implementations have been taken from Python source code */
-#if defined(__ppc__)
+#if defined(__PPC__)
 #define READ_TIMESTAMP(var) (var = ppc_getcounter())
 
 static u_quad_t ppc_getcounter(void)
@@ -56,15 +56,15 @@ int main(int argc, char **argv)
     }
 
     threshold = strtoul(argv[2], NULL, 10);
-    if (threshold > 255)
+    if ((threshold <= 0) || (threshold > 255))
     {
-        fprintf(stderr, "Bad parameter: threshold is bigger than 255 (%u)\n", threshold);
+        fprintf(stderr, "Bad parameter: threshold (%u), must be in [1, 255]\n", threshold);
         return -1;
     }
 
-	IMT_init();
+	IMT_Init();
 
-    err = IMT_load_file(argv[1], &image, NULL);
+    err = IMT_Load(argv[1], &image, NULL);
     if (NULL != image)
     {
         err = IMT_Grayscale(image, &gray);
@@ -105,18 +105,18 @@ int main(int argc, char **argv)
 
             if (num_corners >= 2)
             {
-                int num_limited_corners = num_corners / 2;
+                int num_limited_corners =  num_nonmax_corners / 2;
                 xy* limited_corners;
 
                 printf("Trying fast9 limited (%u features only) simple detection ... ", num_limited_corners);
-                limited_corners = fast9_detect_limited(gray->data, gray->width, gray->height, gray->stride, threshold, &num_limited_corners, 0);
+                limited_corners = fast9_detect_limited(gray->data, gray->width, gray->height, gray->stride, threshold, &num_limited_corners, 1);
 
                 if (NULL == limited_corners)
                     printf("[FAILED] (NULL result)\n");
                 else if (num_limited_corners == 0)
                     printf("[WARNING] (no corners found)\n");
-                else if (num_limited_corners > num_corners / 2)
-                    printf("[FAILED] (corners number incorrect: waited %d, get %d)\n", num_corners / 2, num_limited_corners);
+                else if (num_limited_corners > num_nonmax_corners / 2)
+                    printf("[FAILED] (corners number incorrect: waited %d, get %d)\n", num_nonmax_corners / 2, num_limited_corners);
                 else
                 {
                     int i, j, unknowns=0;
@@ -170,12 +170,12 @@ int main(int argc, char **argv)
             IMT_FreeImage(gray);
         }
         else
-            fprintf(stderr, "Converting input image to greyscale failed: %s\n", IMT_get_error_string(err));
+            fprintf(stderr, "Converting input image to greyscale failed: %s\n", IMT_GetErrorString(err));
 		
         IMT_FreeImage(image);
     }
     else
-        fprintf(stderr, "Loading '%s' failed: %s\n", argv[1], IMT_get_error_string(err));
+        fprintf(stderr, "Loading '%s' failed: %s\n", argv[1], IMT_GetErrorString(err));
 
     return rc;
 }

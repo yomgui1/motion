@@ -4,108 +4,209 @@
 #include <stdlib.h>
 #include <string.h>
 
-MAT_Array *MAT_Array2DfNew(int w, int h)
+int MAT_SameArrayType(MAT_Array *left, MAT_Array *right)
+{
+	return MAT_SAMEARRAYTYPE(left, right);
+}
+
+MAT_Array *MAT_AllocArray(unsigned int width, int type, int clear)
 {
     MAT_Array *array;
-    unsigned int base_size = (sizeof(MAT_Array)+15) & -16;
+    unsigned int datatype_size=0;
+    unsigned int data_offset=(sizeof(MAT_Array)+15) & -16;
+    
+    switch(type)
+    {
+		case MAT_ARRAYTYPE_FLOAT: datatype_size = sizeof(float); break;
+		case MAT_ARRAYTYPE_DOUBLE: datatype_size = sizeof(double); break;
+    }
 
-    array = malloc(base_size + h*w*sizeof(float));
+	if (clear)
+		array = calloc(data_offset + datatype_size*width, 1);
+	else
+		array = malloc(data_offset + datatype_size*width);
+		
     if (array)
     {
-        array->data = (void *)array + base_size;
-        array->width = w;
-        array->height = h;
+		array->type = type;
+		array->width = width;
+		array->datatype_size = datatype_size;
+        array->data.void_ptr = (void *)array + data_offset;
     }
     
     return array;
 }
 
-void MAT_Array2DfFree(MAT_Array *array)
+void MAT_FreeArray(MAT_Array *array)
 {
     free(array);
 }
 
-MAT_Array *MAT_Array2DfDup(MAT_Array *src)
+MAT_Array *MAT_DupArray(MAT_Array *src)
 {
     MAT_Array *dst;
 
-    dst = MAT_Array2DfNew(src->width, src->height);
+    dst = MAT_AllocArray(src->width, src->type, 0);
     if (NULL != dst)
-        memcpy(dst->data, src->data, src->width*src->height*sizeof(float));
+        memcpy(dst->data.void_ptr, src->data.void_ptr, src->datatype_size * src->width);
 
     return dst;
 }
 
+void MAT_ScalarAddArray(MAT_Array *array, double value)
+{
+    int i;
+    
+	switch (array->type)
+	{
+		case MAT_ARRAYTYPE_FLOAT:
+			{
+				float *pa=array->data.float_ptr;
+				float fvalue = value;
+				
+				for (i=0; i < array->width; i++, pa++)
+					*pa += fvalue;
+			}
+			break;
+		
+		case MAT_ARRAYTYPE_DOUBLE:
+			{
+				double *pa=array->data.double_ptr;
+				
+				for (i=0; i < array->width; i++, pa++)
+					*pa += value;
+			}
+			break;
+	}
+}
+
+void MAT_ScalarMulArray(MAT_Array *array, double value)
+{
+    int i;
+    
+	switch (array->type)
+	{
+		case MAT_ARRAYTYPE_FLOAT:
+			{
+				float *pa=array->data.float_ptr;
+				float fvalue = value;
+				
+				for (i=0; i < array->width; i++, pa++)
+					*pa *= fvalue;
+			}
+			break;
+		
+		case MAT_ARRAYTYPE_DOUBLE:
+			{
+				double *pa=array->data.double_ptr;
+				
+				for (i=0; i < array->width; i++, pa++)
+					*pa *= value;
+			}
+			break;
+	}
+}
+
+void MAT_ScalarDivArray(MAT_Array *array, double value)
+{
+    int i;
+    
+	switch (array->type)
+	{
+		case MAT_ARRAYTYPE_FLOAT:
+			{
+				float *pa=array->data.float_ptr;
+				float fvalue = value;
+				
+				for (i=0; i < array->width; i++, pa++)
+					*pa /= fvalue;
+			}
+			break;
+		
+		case MAT_ARRAYTYPE_DOUBLE:
+			{
+				double *pa=array->data.double_ptr;
+				
+				for (i=0; i < array->width; i++, pa++)
+					*pa /= value;
+			}
+			break;
+	}
+}
+
 /* Manhattan distance */
-float MAT_Array2DfNormL1(MAT_Array *array)
+double MAT_NormL1Array(MAT_Array *array)
 {
-    int i, j;
-    float sum=0., *pa=array->data;
-
-    for (i=0; i < array->height; i++)
-    {
-        for (j=0; j < array->width; j++)
-        {
-            sum += fabsf(*pa);
-            pa++;
-        }
-    }
-
-    return sum;
+	int i;
+	
+	switch (array->type)
+	{
+		case MAT_ARRAYTYPE_FLOAT:
+			{
+				float sum=0.0f, *pa=array->data.float_ptr;
+				
+				for (i=0; i < array->width; i++, pa++)
+					sum += fabsf(*pa);
+					
+				return sum;
+			}
+			break;
+		
+		case MAT_ARRAYTYPE_DOUBLE:
+			{
+				double sum=0.0, *pa=array->data.double_ptr;
+				
+				for (i=0; i < array->width; i++, pa++)
+					sum += fabs(*pa);
+					
+				return sum;
+			}
+	}
+	
+	return 0.0;
 }
 
-/* Euclidian distance */
-float MAT_Array2DfNormL2(MAT_Array *array)
+double MAT_NormalizeL1Array(MAT_Array *array)
 {
-    int i, j;
-    float sum=0., *pa=array->data;
-
-    for (i=0; i < array->height; i++)
-    {
-        for (j=0; j < array->width; j++)
-        {
-            float v = fabsf(*pa);
-
-            sum += v*v;
-            pa++;
-        }
-    }
-
-    return sum;
-}
-
-float MAT_Array2DfNormalizeL1(MAT_Array *array)
-{
-    int i, j;
-    float norm = MAT_Array2DfNormL1(array);
-    float *pa = array->data;
-
-    for (i=0; i < array->height; i++)
-    {
-        for (j=0; j < array->width; j++)
-        {
-            *pa /= norm;
-            pa++;
-        }
-    }
-
+    double norm=MAT_NormL1Array(array);
+    MAT_ScalarDivArray(array, norm);
     return norm;
 }
 
-float MAT_Array2DfNormalizeL2(MAT_Array *array)
+/* Euclidian distance */
+double MAT_NormL2Array(MAT_Array *array)
 {
-    int i, j;
-    float norm = MAT_Array2DfNormL2(array);
-    float *pa = array->data;
+    int i;
+	
+	switch (array->type)
+	{
+		case MAT_ARRAYTYPE_FLOAT:
+			{
+				float sum=0.0f, *pa=array->data.float_ptr;
+				
+				for (i=0; i < array->width; i++, pa++)
+					sum += (*pa) * (*pa);
+					
+				return sum;
+			}
+		
+		case MAT_ARRAYTYPE_DOUBLE:
+			{
+				double sum=0.0, *pa=array->data.double_ptr;
+				
+				for (i=0; i < array->width; i++, pa++)
+					sum += (*pa) * (*pa);
+					
+				return sum;
+			}
+	}
 
-    for (i=0; i < array->height; i++)
-    {
-        for (j=0; j < array->width; j++)
-        {
-            *pa /= norm;
-            pa++;
-        }
-    }
+    return 0.0;
+}
 
+double MAT_NormalizeL2Array(MAT_Array *array)
+{
+    double norm=MAT_NormL2Array(array);
+    MAT_ScalarDivArray(array, norm);
     return norm;
 }

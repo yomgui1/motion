@@ -1,5 +1,4 @@
 #include "math/convolution.h"
-#include "math/array.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,10 +25,10 @@ void print_array(const float *array, int w, int h)
 
 int main(int argc, char **argv)
 {
-    float *kernel, *kernel_der;
+    MAT_Array *kernel, *derivatives;
     int width;
     float sigma = .9;
-    float array_out[7*7];
+    MAT_Array *output, *test_7x7;
     float array_test[7*7] = {
         0,0,0,0,0,0,0,
         0,0,0,0,0,0,0,
@@ -41,33 +40,22 @@ int main(int argc, char **argv)
     };
 
     printf("Computing Gaussian kernel for sigma=%g", sigma);
-    width = MAT_ZMGaussianKernel(sigma, &kernel, &kernel_der);
-    if (width)
+    width = MAT_ZMGaussianKernel(sigma, &kernel, &derivatives);
+    if (!width || !kernel || !derivatives)
     {
-        printf(" [OK] (width=%u)\n", width);
-        putchar('\n');
-        print_array(kernel, width, 1);
-        putchar('\n');
-        print_array(kernel_der, width, 1);
-    }
-    else
         printf(" [FAILED]\n");
-
-    width = MAT_GaussianConvolve(sigma, array_test, array_out, 7, 7, kernel, width);
-    printf("MAT_GaussianConvolve() resulted with %d\n", width);
-    if (width)
-    {
-        putchar('\n');
-        print_array(array_test, 7, 7);
-        putchar('\n');
-        print_array(array_out, 7, 7);
-
-        printf("Norm of array_test: %f\n", MAT_ArrayNormL1(array_test, 7, 7));
-        printf("Norm of array_out: %f\n", MAT_ArrayNormL1(array_out, 7, 7));
+        return 1;
     }
+    
+    printf(" [OK] (width=%u)\n", width);
+    printf("\nKernel data:\n");
+    print_array(kernel->data.float_ptr, width, 1);
+    
+    printf("\nDerivatives data:\n");
+    print_array(derivatives->data.float_ptr, width, 1);
 
-    //free(kernel);
-    free(kernel_der);
+	MAT_FreeArray(kernel);
+	MAT_FreeArray(derivatives);
 
     return 0;
 }

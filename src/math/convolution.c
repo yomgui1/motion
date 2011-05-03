@@ -1,4 +1,4 @@
-#include "math.h"
+#include "math/array.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -20,125 +20,85 @@ double MAT_ZMGaussianDerivative(double x, double sigma)
     return -MAT_ZMGaussian(x, sigma) * x / (sigma*sigma);
 }
 
-/* Zero mean normalized gaussian kernel and derivatives */
-int MAT_ZMGaussianKernel(double sigma, float **p_kernel, float **p_kernel_der)
+/* Generate a ero mean normalized gaussian kernel (MAT_Array(float)) and its derivatives (MAT_Array(float)).
+ * Return the size of the kernel.
+ * In case of error (i.e. array allocation failed) returns 0 and given pointed values are NULL.
+ */
+int MAT_ZMGaussianKernel(double sigma, MAT_Array **p_kernel, MAT_Array **p_derivatives)
 {
     const double _gaussian = 0.0044318; /* MAT_ZeroMeanGaussian(3, 1) */
-    int w, w2, i;
-    float *kernel, *kernel_der;
+    MAT_Array *kernel, *derivatives; /* used for code simplification */
+	int i, width, halfwidth;
+	float *kernel_data, *derivatives_data;
 
-    /* Kernel size (odd value), we suppose that the int cast rounds */
-    w = ((int)(2 * MAT_InvZMGaussian(_gaussian, sigma)) & -2) + 1;
-
-    kernel = *p_kernel = malloc(w*sizeof(*kernel));
-    if (NULL == kernel)
+    /* Compute kernel size (odd value), we suppose that the int cast rounds */
+    width = ((int)(2 * MAT_InvZMGaussian(_gaussian, sigma)) & -2) + 1;
+    
+	/* Arrays allocations  */
+    kernel = *p_kernel = MAT_AllocArray(width, MAT_ARRAYTYPE_FLOAT, 0);
+    derivatives = *p_derivatives = MAT_AllocArray(width, MAT_ARRAYTYPE_FLOAT, 0);
+    
+    if ((NULL == kernel) || (NULL == derivatives))
+    {
+		MAT_FreeArray(kernel);
+		MAT_FreeArray(derivatives);
         return 0;
-
-    kernel_der = *p_kernel_der = malloc(w*sizeof(*kernel_der));
-    if (NULL == kernel_der)
-    {
-        free(kernel);
-        return 0;
     }
 
-    w2 = w / 2;
-    for (i=-w2; i <= w2; i++)
+    halfwidth = width / 2;
+    kernel_data = kernel->data.float_ptr;
+    derivatives_data = derivatives->data.float_ptr;
+    
+    for (i=-halfwidth; i <= halfwidth; i++)
     {
-        kernel    [w2+i] = MAT_ZMGaussian(i, sigma);
-        kernel_der[w2+i] = MAT_ZMGaussianDerivative(i, sigma);
+        *kernel_data++ = MAT_ZMGaussian(i, sigma);
+        *derivatives_data++ = MAT_ZMGaussianDerivative(i, sigma);
     }
 
-    return w;
+    return width;
 }
 
-void MAT_ArrayHorizConvolve(float *kernel, int kw, float *in, float *out, int aw, int ah)
+int MAT_ArrayConvolve(MAT_Array *kernel, MAT_Array *input, MAT_Array *output, int increment)
 {
-    int i, j, k, kw2;
+    int i, k, width, k_width, k_halfwidth;
+    
+    if (kernel->type != input->type) return 1;
+	if (!MAT_SAMEARRAYTYPE(input, output)) return 1;
+	
+	width = input->width;
+	k_width = kernel->width;
+	k_halfwidth = k_width / 2;
 
-    kw2 = kw/2;
+#define _CONVOLVE(T) \
+	{ \
+		T *pai = input->data.T##_ptr; \
+		T *pao = output->data.T##_ptr; \
+		for (i=0; i < width; i++) \
+		{ \
+			T sum; \
+			for (sum=0,k=0; k < k_width; k++) \
+			{ \
+				int ii = i + (k - k_halfwidth) * increment; \
+				if ((ii >= 0) && (ii < width)) \
+					sum += kernel->data.T##_ptr[k] * (pai + ii)[0]; \
+			} \
+			pao[i] = sum; \
+		} \
+	}
+    
+    switch (input->type)
+	{
+		case MAT_ARRAYTYPE_FLOAT:
+			_CONVOLVE(float);
+			break;
+		
+		case MAT_ARRAYTYPE_DOUBLE:
+			_CONVOLVE(double);
+			break;
+	}
+	
+#undef _CONVOLVE
 
-    for (i=0; i < ah; i++)
-    {
-        float *pai = &in[i*aw];
-        float *pao = &out[i*aw];
-
-        for (j=0; j < aw; j++)
-        {
-            float sum;
-            int r;
-
-            for (sum=0,k=0,r=0; k < kw; k++, r++)
-            {
-                int jj = j - kw2 + r;
-                
-                if ((jj >= 0) && (jj < aw))
-                    sum += kernel[k] * (pai + jj)[0];
-            }
-
-            pao[0] = sum;
-
-            pao++;
-        }
-    }
+	return 0;
 }
 
-void MAT_ArrayVertConvolve(float *kernel, int kw, float *in, float *out, int aw, int ah)
-{
-    int i, j, k, kw2;
-
-    kw2 = kw/2;
-
-    for (j=0; j < aw; j++)
-    {
-        float *pai = &in[j];
-        float *pao = &out[j];
-
-        for (i=0; i < ah; i++)
-        {
-            float sum;
-            int r;
-
-            for (sum=0,k=0,r=0; k < kw; k++, r++)
-            {
-                int ii = i - kw2 + r;
-
-                if ((ii >= 0) && (ii < ah))
-                    sum += kernel[k] * (pai + ii*aw)[0];
-            }
-
-            pao[0] = sum;
-
-            pao += aw;
-        }
-    }
-}
-
-int MAT_GaussianConvolve(double sigma, float *in, float *out, int w, int h, float *kernel, int kw)
-{
-    float *tmp, *kernel_der=NULL;
-
-    if (NULL == kernel)
-    {
-        kw = MAT_ZMGaussianKernel(sigma, &kernel, &kernel_der);
-        if (!kw)
-            return 0;
-    }
-
-    tmp = malloc(w*h*sizeof(*in));
-    if (NULL == tmp)
-    {
-        kw = 0;
-        goto bye;
-    }
-
-    MAT_ArrayHorizConvolve(kernel, kw, in, tmp, w, h);
-    MAT_ArrayVertConvolve(kernel, kw, tmp, out, w, h);
-
-    free(tmp);
-
-bye:
-    free(kernel);
-    free(kernel_der);
-
-    return kw;
-}

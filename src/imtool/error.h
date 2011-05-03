@@ -13,6 +13,6 @@ enum
     IMT_ERR_FORMAT,
 };
 
-extern const char *IMT_get_error_string(int err);
+extern const char *IMT_GetErrorString(int err);
 
 #endif /* IMT_ERROR_H */

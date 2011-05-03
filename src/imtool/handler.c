@@ -2,7 +2,7 @@
 
 static _IMT_Handler _dummy_head_handler = {NULL};
 
-IMT_Handler *IMT_handler_from_filename(const char *filename)
+IMT_Handler *IMT_HandlerFromFilename(const char *filename)
 {
     _IMT_Handler *handler;
 
@@ -16,13 +16,13 @@ IMT_Handler *IMT_handler_from_filename(const char *filename)
     return NULL;
 }
 
-void IMT_init(void)
+void IMT_Init(void)
 {
 	extern _IMT_Handler _imt_png_handler;
 	_dummy_head_handler.next = &_imt_png_handler;
 }
 
-int IMT_load_file(const char *filename, IMT_Image **p_image, void *options)
+int IMT_Load(const char *filename, IMT_Image **p_image, void *options)
 {
     _IMT_Handler *handler;
     int err;
@@ -35,7 +35,7 @@ int IMT_load_file(const char *filename, IMT_Image **p_image, void *options)
             return err;
     }
 
-    handler = (_IMT_Handler *)IMT_handler_from_filename(filename);
+    handler = (_IMT_Handler *)IMT_HandlerFromFilename(filename);
     if ((NULL != handler) && (NULL != handler->load))
     {
         err = handler->load(filename, p_image, options);
@@ -57,7 +57,7 @@ int IMT_load_file(const char *filename, IMT_Image **p_image, void *options)
     return IMT_ERR_NO_HANDLER;
 }
 
-int IMT_save_file(const char *filename, IMT_Image *image, void *options)
+int IMT_Save(const char *filename, IMT_Image *image, void *options)
 {
     _IMT_Handler *handler;
     int err;
@@ -71,7 +71,7 @@ int IMT_save_file(const char *filename, IMT_Image *image, void *options)
             return err;
     }
 
-    handler = (_IMT_Handler *)IMT_handler_from_filename(filename);
+    handler = (_IMT_Handler *)IMT_HandlerFromFilename(filename);
     if ((NULL != handler) && (NULL != handler->save))
     {
         err = handler->save(filename, image, options);

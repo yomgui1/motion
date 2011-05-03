@@ -1,5 +1,6 @@
 #include "image.h"
 #include "error.h"
+#include "math/convolution.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -58,7 +59,7 @@ int IMT_AllocImage(IMT_Image ** p_image,
     bpp = IMT_GetBytesPerPixel(fmt);
     stride = bpp * width + padding;
 
-    printf("[DBG] alloc image: %ux%u, fmt=%u, bpp=%u, stride=%xu\n", width, height, fmt, bpp, stride);
+    //printf("[DBG] alloc image: %ux%u, fmt=%u, bpp=%u, stride=%u\n", width, height, fmt, bpp, stride);
 
 	image = malloc(sizeof(*image) + (height*stride));
 	if (image)
@@ -70,8 +71,7 @@ int IMT_AllocImage(IMT_Image ** p_image,
         image->channels = channels;
 		image->stride = stride;
 		image->data = ((char *)image) + sizeof(*image);
-        image->float_data = NULL;
-        image->float_stride = 0;
+        image->float_array = NULL;
 
         *p_image = image;
 	}
@@ -83,102 +83,9 @@ void IMT_FreeImage(IMT_Image *image)
 {
 	if (image)
     {
-        free(image->float_data);
+        MAT_FreeArray(image->float_array);
 		free(image);
     }
-}
-
-int IMT_GenerateFloatData(IMT_Image *image)
-{
-    unsigned int x, y;
-    unsigned char *sp;
-    float *dp;
-
-    /* Clear previous */
-    free(image->float_data);
-
-    /* Float image stride (aligned on 16-bytes for SIMD requirements) */
-    image->float_stride = image->width * image->channels * sizeof(float);
-    image->float_stride = (image->float_stride + 15) & -16;
-
-    image->float_data = malloc(image->height * image->float_stride);
-    if (NULL == image->float_data)
-        return IMT_ERR_MEM;
-
-    switch (image->channels)
-    {
-        case 1:
-            for (y=0; y < image->height; y++)
-            {
-                sp = image->data + (y * image->stride);
-                dp = (void *)image->float_data + (y * image->stride);
-                
-                for (x=0; x < image->width; x++)
-                {
-                    dp[0] = UBYTE2FLOAT(sp[0]);
-                    
-                    sp += 1;
-                    dp += 1;
-                }
-            }
-            break;
-
-        case 2:
-            for (y=0; y < image->height; y++)
-            {
-                sp = image->data + (y * image->stride);
-                dp = (void *)image->float_data + (y * image->stride);
-
-                for (x=0; x < image->width; x++)
-                {
-                    dp[0] = UBYTE2FLOAT(sp[0]);
-                    dp[1] = UBYTE2FLOAT(sp[1]);
-
-                    sp += 2;
-                    dp += 2;
-                }
-            }
-            break;
-
-        case 3:
-            for (y=0; y < image->height; y++)
-            {
-                sp = image->data + (y * image->stride);
-                dp = (void *)image->float_data + (y * image->stride);
-
-                for (x=0; x < image->width; x++)
-                {
-                    dp[0] = UBYTE2FLOAT(sp[0]);
-                    dp[1] = UBYTE2FLOAT(sp[1]);
-                    dp[2] = UBYTE2FLOAT(sp[2]);
-
-                    sp += 3;
-                    dp += 3;
-                }
-            }
-            break;
-
-        case 4:
-            for (y=0; y < image->height; y++)
-            {
-                sp = image->data + (y * image->stride);
-                dp = (void *)image->float_data + (y * image->stride);
-
-                for (x=0; x < image->width; x++)
-                {
-                    dp[0] = UBYTE2FLOAT(sp[0]);
-                    dp[1] = UBYTE2FLOAT(sp[1]);
-                    dp[2] = UBYTE2FLOAT(sp[2]);
-                    dp[3] = UBYTE2FLOAT(sp[3]);
-                    
-                    sp += 4;
-                    dp += 4;
-                }
-            }
-            break;
-    }
-
-    return IMT_ERR_FORMAT;
 }
 
 int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst)
@@ -264,3 +171,204 @@ int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst)
 	return IMT_ERR_NOERROR;
 }
 
+int IMT_GenerateFloatData(IMT_Image *image, int empty)
+{
+    unsigned int x, y;
+    unsigned char *sp;
+    float *dp;
+
+    /* Free previous */
+    free(image->float_array);
+
+    image->float_array = MAT_AllocArray(image->width * image->height, MAT_ARRAYTYPE_FLOAT, empty);
+    if (NULL == image->float_array)
+        return IMT_ERR_MEM;
+
+	if (empty)
+		return IMT_ERR_NOERROR;
+	
+    switch (image->channels)
+    {
+        case 1:
+            for (y=0; y < image->height; y++)
+            {
+                sp = image->data + (y * image->stride);
+                dp = image->float_array->data.float_ptr + (y * image->width);
+                
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = UBYTE2FLOAT(sp[0]);
+                    
+                    sp += 1;
+                    dp += 1;
+                }
+            }
+            break;
+
+        case 2:
+            for (y=0; y < image->height; y++)
+            {
+                sp = image->data + (y * image->stride);
+                dp = image->float_array->data.float_ptr + (y * image->width);
+
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = UBYTE2FLOAT(sp[0]);
+                    dp[1] = UBYTE2FLOAT(sp[1]);
+
+                    sp += 2;
+                    dp += 2;
+                }
+            }
+            break;
+
+        case 3:
+            for (y=0; y < image->height; y++)
+            {
+                sp = image->data + (y * image->stride);
+                dp = image->float_array->data.float_ptr + (y * image->width);
+
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = UBYTE2FLOAT(sp[0]);
+                    dp[1] = UBYTE2FLOAT(sp[1]);
+                    dp[2] = UBYTE2FLOAT(sp[2]);
+
+                    sp += 3;
+                    dp += 3;
+                }
+            }
+            break;
+
+        case 4:
+            for (y=0; y < image->height; y++)
+            {
+                sp = image->data + (y * image->stride);
+                dp = image->float_array->data.float_ptr + (y * image->width);
+
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = UBYTE2FLOAT(sp[0]);
+                    dp[1] = UBYTE2FLOAT(sp[1]);
+                    dp[2] = UBYTE2FLOAT(sp[2]);
+                    dp[3] = UBYTE2FLOAT(sp[3]);
+                    
+                    sp += 4;
+                    dp += 4;
+                }
+            }
+            break;
+            
+        default:
+			return IMT_ERR_FORMAT;
+    }
+
+    return IMT_ERR_NOERROR;
+}
+
+int IMT_FromFloatData(IMT_Image *image)
+{
+    unsigned int x, y;
+    unsigned char *dp;
+    float *sp;
+
+    if (NULL == image->float_array)
+        return IMT_ERR_SYS;
+	
+    switch (image->channels)
+    {
+        case 1:
+            for (y=0; y < image->height; y++)
+            {
+				sp = image->float_array->data.float_ptr + (y * image->width);
+                dp = image->data + (y * image->stride);
+                
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = FLOAT2UBYTE(sp[0]);
+                    
+                    sp += 1;
+                    dp += 1;
+                }
+            }
+            break;
+
+        case 2:
+            for (y=0; y < image->height; y++)
+            {
+                sp = image->float_array->data.float_ptr + (y * image->width);
+                dp = image->data + (y * image->stride);
+
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = FLOAT2UBYTE(sp[0]);
+                    dp[1] = FLOAT2UBYTE(sp[1]);
+
+                    sp += 2;
+                    dp += 2;
+                }
+            }
+            break;
+
+        case 3:
+            for (y=0; y < image->height; y++)
+            {
+                sp = image->float_array->data.float_ptr + (y * image->width);
+                dp = image->data + (y * image->stride);
+
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = FLOAT2UBYTE(sp[0]);
+                    dp[1] = FLOAT2UBYTE(sp[1]);
+                    dp[2] = FLOAT2UBYTE(sp[2]);
+
+                    sp += 3;
+                    dp += 3;
+                }
+            }
+            break;
+
+        case 4:
+            for (y=0; y < image->height; y++)
+            {
+                sp = image->float_array->data.float_ptr + (y * image->width);
+                dp = image->data + (y * image->stride);
+
+                for (x=0; x < image->width; x++)
+                {
+                    dp[0] = FLOAT2UBYTE(sp[0]);
+                    dp[1] = FLOAT2UBYTE(sp[1]);
+                    dp[2] = FLOAT2UBYTE(sp[2]);
+                    dp[3] = FLOAT2UBYTE(sp[3]);
+                    
+                    sp += 4;
+                    dp += 4;
+                }
+            }
+            break;
+            
+        default:
+			return IMT_ERR_FORMAT;
+    }
+
+    return IMT_ERR_NOERROR;
+}
+
+int IMT_ImageConvolve(MAT_Array *kernel, IMT_Image *input, IMT_Image *output)
+{
+	int res;
+	MAT_Array *tmp;
+	
+	/* Make sure the images have float data arrays */
+	if (IMT_GenerateFloatData(input, 0)) return 1;
+	if (IMT_GenerateFloatData(output, 1)) return 1;
+	
+	tmp = MAT_AllocArray(input->width * input->height, input->float_array->type, 0);
+	if (NULL == tmp) return 1;
+	
+    res = MAT_ArrayConvolve(kernel, input->float_array, tmp, 1);
+    res |= MAT_ArrayConvolve(kernel, tmp, output->float_array, output->width);
+	
+	MAT_FreeArray(tmp);
+	return res;
+}
