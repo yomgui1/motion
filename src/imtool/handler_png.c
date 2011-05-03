@@ -222,7 +222,7 @@ static int imt_png_save_to_file(const char *filename, IMT_Image *image, void *op
 		for (i = 0; i < image->height; i++)
 			row_pointers[i] = (png_bytep)((unsigned char *)image->data + i * image->stride);
 					
-		err = IMT_ERR_IO;	
+		err = IMT_ERR_IO;
 		png_write_info(png_ptr, info_ptr);
 		png_write_image(png_ptr, row_pointers);
 		png_write_end(png_ptr, info_ptr);

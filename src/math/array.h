@@ -10,11 +10,13 @@ enum
     MAT_ARRAYTYPE_DOUBLE,
 } MAT_ArrayType;
 
+/* MAT_Array is a container object storing zero or more values of same type.
+ */
 typedef struct MAT_Array
 {
     int type;
-    unsigned int width;
     unsigned int datatype_size;
+    unsigned int width;
     union {
 		void   *void_ptr;
 		float  *float_ptr;

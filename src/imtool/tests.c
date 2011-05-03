@@ -7,7 +7,7 @@
 
 int main(int argc, char **argv)
 {
-	int err, width;
+	int i, err, width, level;
 	IMT_Image *input, *output, *gray;
 	MAT_Array *kernel;
 	MAT_Array *derivatives;
@@ -22,7 +22,7 @@ int main(int argc, char **argv)
 	sigma = strtod(argv[3], NULL);
 	
 	IMT_Init();
-	
+
 	printf("Loading image '%s' ", argv[1]);
 	err = IMT_Load(argv[1], &input, NULL);
 	if (err || !input)
@@ -44,10 +44,9 @@ int main(int argc, char **argv)
 		printf("[OK]\n");
 		
 	printf("Generating float data array of the gray image ");
-	err = IMT_GenerateFloatData(gray, 0);
-	if (err)
+	if (NULL == IMT_GetFloatImage(gray, 0))
 	{
-		printf("[FAILED], %s\n", IMT_GetErrorString(err));
+		printf("[FAILED]\n");
 		goto bye;
 	}
 	else
@@ -82,7 +81,7 @@ int main(int argc, char **argv)
 	else
 		printf("[OK]\n");
 			
-	printf("Flushing float data into image data ");
+	printf("Revert float data into image data ");
 	err = IMT_FromFloatData(output);
 	if (err)
 	{
@@ -91,16 +90,47 @@ int main(int argc, char **argv)
 	}
 	else
 		printf("[OK]\n");
-		
-	printf("Saving output image ");
-	err = IMT_Save(argv[2], output, NULL);
-	if (err)
+
+    printf("Create pyramidal data of input image ");
+    level = IMT_GeneratePyramidalSubImages(gray, 3, sigma);
+	if (level < 0)
 	{
-		printf("[FAILED], %s\n", IMT_GetErrorString(err));
+		printf("[FAILED]\n");
 		goto bye;
 	}
 	else
 		printf("[OK]\n");
+
+    for (i=0; i < gray->levels; i++)
+    {
+        IMT_Image *tmp;
+
+        printf("Converting subimage %u ", i);
+        err = IMT_ImageFromFloatArray(gray->subimages[i], &tmp,
+                                      gray->format, gray->width >> (i+1),
+                                      gray->height >> (i+1));
+        if (err)
+        {
+            printf("[FAILED], %s\n", IMT_GetErrorString(err));
+            continue;
+        }
+        else
+            printf("[OK]\n");
+
+        if (!err)
+        {
+            char name[80];
+
+            sprintf(name, "subimage_%02u.png", i);
+            printf("Saving subimage '%s' ", name);
+            err = IMT_Save(name, tmp, NULL);
+            if (err)
+                printf("[FAILED], %s\n", IMT_GetErrorString(err));
+            else
+                printf("[OK]\n");
+            IMT_FreeImage(tmp);
+        }
+    }
 		
 bye:
 	IMT_FreeImage(input);

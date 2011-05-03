@@ -62,10 +62,10 @@ void MAT_ScalarAddArray(MAT_Array *array, double value)
 		case MAT_ARRAYTYPE_FLOAT:
 			{
 				float *pa=array->data.float_ptr;
-				float fvalue = value;
-				
-				for (i=0; i < array->width; i++, pa++)
-					*pa += fvalue;
+				float fvalue=value;
+
+                for (i=0; i < array->width; i++, pa++)
+                    *pa += fvalue;
 			}
 			break;
 		
@@ -89,7 +89,7 @@ void MAT_ScalarMulArray(MAT_Array *array, double value)
 		case MAT_ARRAYTYPE_FLOAT:
 			{
 				float *pa=array->data.float_ptr;
-				float fvalue = value;
+				float fvalue=value;
 				
 				for (i=0; i < array->width; i++, pa++)
 					*pa *= fvalue;
@@ -116,7 +116,7 @@ void MAT_ScalarDivArray(MAT_Array *array, double value)
 		case MAT_ARRAYTYPE_FLOAT:
 			{
 				float *pa=array->data.float_ptr;
-				float fvalue = value;
+				float fvalue=value;
 				
 				for (i=0; i < array->width; i++, pa++)
 					*pa /= fvalue;
