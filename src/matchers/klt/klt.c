@@ -67,23 +67,26 @@ static void computeZieiCoeff(
     const int hw = ctx->win_halfwidth, hh = ctx->win_halfheight;
     int i, j;
 
-    *Jxx = 0.0; *Jxy = 0.0; *Jyy = 0.0;
-    *Jxt = 0.0; *Jyt = 0.0;
+    *Jxx = 0.0f; *Jxy = 0.0f; *Jyy = 0.0f;
+    *Jxt = 0.0f; *Jyt = 0.0f;
 
     for (j=-hh ; j <= hh ; j++)
     {
         for (i=-hw ; i <= hw; i++)
         {
-            float x1 = CLAMP(0.0, cx1+i, level1->ncols/3);
-            float y1 = CLAMP(0.0, cy1+j, level1->nrows);
-            float x2 = CLAMP(0.0, cx2+i, level2->ncols/3);
-            float y2 = CLAMP(0.0, cy2+j, level2->nrows);
+            float x1 = CLAMP(0.0f, cx1+i, level1->ncols/3-1);
+            float y1 = CLAMP(0.0f, cy1+j, level1->nrows-1);
+            float x2 = CLAMP(0.0f, cx2+i, level2->ncols/3-1);
+            float y2 = CLAMP(0.0f, cy2+j, level2->nrows-1);
             float p1, p2, It, Ix, Iy;
+
+			//printf("x1=%f, y1=%f, x2=%f, y2=%f\n", x1,y1,x2,y2);
 
             /* Get pixels value in both images (interpolate at subpixels) */
             p1 = interpolate(level1, 0, x1, y1);
             p2 = interpolate(level2, 0, x2, y2);
             It = p1 - p2;
+            //printf("p1=%f, p2=%f, x2=%f, y2=%f (%u, %u)\n", p1, p2, x2, y2, level2->ncols/3, level2->nrows);
 
             /* Do the same for gradients in the second image */
             Ix = interpolate(level2, 1, x2, y2);
@@ -150,7 +153,7 @@ int KLT_TrackFeatureAtLevel(
 						 &Jxx, &Jxy, &Jyy, 
 						 &Jxt, &Jyt);
 						 
-        //printf("[DBG] Zi=[%g, %g, %g], det=%f\n", Jxx, Jxy, Jyy, Jxx*Jyy - Jxy*Jxy);
+        //printf("[DBG] Zi=[%g, %g, %g], det=%f\n", Jxx, Jxy, Jyy, Jxx*Jyy-Jxy*Jxy);
         //printf("[DBG] ei=[%g, %g]\n", Jxt, Jyt);
 
 		res = solveTrackingEquation(Jxx, Jxy, Jyy, Jxt, Jyt, &uxi, &uyi);
@@ -164,8 +167,8 @@ int KLT_TrackFeatureAtLevel(
 		pos2->y += uyi;
 		
 		/* Feature goes out of image? */
-		if ((pos2->x < 0.0) || (pos2->x >= level1->ncols) ||
-			(pos2->y < 0.0) || (pos2->y >= level1->nrows))
+		if ((pos2->x < 0.0f) || (pos2->x >= level1->ncols) ||
+			(pos2->y < 0.0f) || (pos2->y >= level1->nrows))
 			return KLT_OOB;
 			
 		/* Stop on convergence */
@@ -188,7 +191,6 @@ void KLT_TrackFeaturesAtLevel(
     int i;
 	float level_div = 1 << level;
 
-    //printf("level: %u, nfeatures: %u\n", level, ctx->nfeatures);
 	for (i=0; i < ctx->nfeatures; i++)
 	{
 		int res;
@@ -196,14 +198,10 @@ void KLT_TrackFeaturesAtLevel(
 		
 		pos1.x = ctx->features[i].position.x / level_div;
 		pos1.y = ctx->features[i].position.y / level_div;
-		
-        if (ctx->estimated_features[i].status == KLT_TRACKED)
-        {
-            ctx->estimated_features[i].position.x *= 2;
-            ctx->estimated_features[i].position.y *= 2;
-        }
 
 		res = KLT_TrackFeatureAtLevel(ctx, level1, &pos1, level2, &ctx->estimated_features[i].position);
+		//printf("[dbg] L%u, F%u: pos1=(%f, %f), pos2=(%f, %f)\n",
+		//	   level, i, pos1.x, pos1.y, ctx->estimated_features[i].position.x, ctx->estimated_features[i].position.y);
         ctx->features[i].status = res;
 
         /* XXX: Original libklt verify if the intensity over the searching window doesn't change
@@ -307,13 +305,14 @@ int KLT_TrackFeatures(
 	float max_level_div;
 	KLT_Feature *estimated_features;
 	
+	ctx->win_width = 2*ctx->win_halfwidth + 1;
+	ctx->win_height = 2*ctx->win_halfheight + 1;
+	
     /* Prepare images */
     if(IMT_GeneratePyramidalSubImages(image1, ctx->max_pyramid_level, ctx->pyramid_sigma) < 0)
         return 1;
     if(IMT_GeneratePyramidalSubImages(image2, ctx->max_pyramid_level, ctx->pyramid_sigma) < 0)
         return 1;
-
-    printf("pyramids done\n");
 
     if (image1->levels <= image2->levels)
         max_level = image1->levels;
@@ -323,8 +322,6 @@ int KLT_TrackFeatures(
 
 	estimated_features = malloc(features_set->nfeatures * sizeof(KLT_Feature));
     if (NULL == estimated_features) return 1;
-
-    printf("estimators alloc done\n");
 	
 	/* Prepare estimated features position into second image */
 	for (i=0; i < features_set->nfeatures; i++)
@@ -338,11 +335,15 @@ int KLT_TrackFeatures(
 	ctx->features = features_set->features;
 	ctx->estimated_features = estimated_features;
 	
-    printf("tracking, max level is %u\n", max_level);
 	for (level=max_level; level >= 0; level--)
 		KLT_TrackFeaturesAtLevel(ctx, level, image1->subimages[level], image2->subimages[level]);
 		
 	/* TODO: and now? what to do of features estimated positions? */
+	for (i=0; i < features_set->nfeatures; i++)
+	{
+		features_set->features[i].position.x = estimated_features[i].position.x;
+		features_set->features[i].position.y = estimated_features[i].position.y;
+	}
 
     return 0;
 }
@@ -350,10 +351,8 @@ int KLT_TrackFeatures(
 void KLT_InitContextDefaults(KLT_Context *ctx)
 {
     ctx->max_iterations = 11;
-    ctx->win_width = 3*2+1;
-    ctx->win_height = 3*2+1;
-    ctx->win_halfwidth = ctx->win_width/2;
-    ctx->win_halfheight = ctx->win_height/2;
+    ctx->win_halfwidth = 3;
+    ctx->win_halfheight = 3;
     ctx->pyramid_sigma = .9;
     ctx->max_pyramid_level = 4;
 }

@@ -69,15 +69,15 @@ static int test_TrackFeature(void)
     int err, res=-1;
     IMT_Image *image1, *image2;
     int x0=32, y0=64;
-    int dx=4, dy=7;
+    int dx=3, dy=5;
     KLT_Feature f1, f2;
     float ex, ey;
 
     KLT_InitContextDefaults(&ctx);
-    ctx.max_pyramid_level = 30;
+    ctx.max_pyramid_level = 2;
 
-    err = IMT_AllocImage(&image1, IMT_PIXFMT_GRAY8, 720, 586, 0, NULL);
-    err |= IMT_AllocImage(&image2, IMT_PIXFMT_GRAY8, 720, 586, 0, NULL);
+    err = IMT_AllocImage(&image1, IMT_PIXFMT_GRAY8, 64, 128, 0, NULL);
+    err |= IMT_AllocImage(&image2, IMT_PIXFMT_GRAY8, 64, 128, 0, NULL);
     if (err) goto bye;
 
     bzero(image1->data, image1->height * image1->stride);
@@ -114,24 +114,27 @@ bye:
 static int test_TrackFeatures(const char *filename1, const char *filename2)
 {
     KLT_Context ctx;
-    int err, res=-1, num_corners, i;
+    int err, res=-1, num_corners, i, count;
     IMT_Image *image1, *image2;
     IMT_Image *gray1, *gray2;
     xy *corners;
     KLT_FeatureSet ft;
 
     KLT_InitContextDefaults(&ctx);
+    ctx.win_halfwidth = 3;
+    ctx.win_halfheight = 3;
+    ctx.max_pyramid_level = 4;
 
-    err = IMT_Load(filename1, &image1, NULL);
-    err |= IMT_Load(filename1, &image2, NULL);
+	err = IMT_Load(filename1, &image1, NULL);
+    err |= IMT_Load(filename2, &image2, NULL);
     if (err) goto bye;
 
     err = IMT_Grayscale(image1, &gray1);
     err |= IMT_Grayscale(image2, &gray2);
     if (err) goto bye;
 
-    num_corners = 10;
-    corners = fast9_detect_limited(gray1->data, gray1->width, gray1->height, gray1->stride, 20, &num_corners, 1);
+    num_corners = 1000;
+    corners = fast9_detect_limited(gray1->data, gray1->width, gray1->height, gray1->stride, 10, &num_corners, 1);
     printf("%u corners found\n", num_corners);
 
     if ((NULL == corners) || !corners)
@@ -145,7 +148,7 @@ static int test_TrackFeatures(const char *filename1, const char *filename2)
         ft.features[i].position.x = corners[i].x;
         ft.features[i].position.y = corners[i].y;
 
-        ((unsigned char *)gray1->data)[corners[i].y*gray1->width+corners[i].x] = 255;
+        ((unsigned char *)gray1->data)[corners[i].y*gray1->width + corners[i].x] = 255;
     }
 
     IMT_Save("gray1.png", gray1, NULL);
@@ -153,13 +156,19 @@ static int test_TrackFeatures(const char *filename1, const char *filename2)
     res = KLT_TrackFeatures(&ctx, &ft, gray1, gray2);
     printf("[DBG] KLT_TrackFeatures() resulted with %d\n", res);
 
+	count = 0;
     for (i=0; i < num_corners; i++)
     {
-        
-        //((unsigned char *)gray2->data)[ft.features[i].y*gray1->width+[i].x] = 255;
+		if (ft.features[i].status == KLT_TRACKED)
+		{
+			((unsigned char *)gray2->data)[(int)ft.features[i].position.y*gray2->width + (int)ft.features[i].position.x] = 255;
+			count++;
+		}
     }
+    
+	printf("%u remains tracked\n" ,count);
 
-    IMT_Save("gray2.png", gray1, NULL);
+    IMT_Save("gray2.png", gray2, NULL);
 
     res = 0;
 
