@@ -17,6 +17,7 @@ typedef struct MAT_Array
     int type;
     unsigned int datatype_size;
     unsigned int width;
+    void *_alloc_data; /* indicate that following pointer is owned by the structure */
     union {
 		void   *void_ptr;
 		float  *float_ptr;
@@ -25,8 +26,14 @@ typedef struct MAT_Array
 } MAT_Array;
 
 extern int MAT_SameArrayType(MAT_Array *left, MAT_Array *right);
-extern MAT_Array *MAT_AllocArray(unsigned int width, int type, int clear);
+extern MAT_Array *MAT_InitArray(MAT_Array *array, unsigned int width, int type, void *data);
+extern MAT_Array *MAT_AllocArray(
+    unsigned int width,
+    int type,
+    int clear,
+    void *data);
 extern void MAT_FreeArray(MAT_Array *array);
+extern void MAT_ZeroArray(MAT_Array *array);
 extern MAT_Array *MAT_DupArray(MAT_Array *src);
 extern MAT_Array *MAT_ExtractArrayPlan(MAT_Array *src, unsigned int max, unsigned int index);
 extern void MAT_ScalarAddArray(MAT_Array *array, double value);

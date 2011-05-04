@@ -1,4 +1,4 @@
-#include "math/array.h"
+#include "math/matrix.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -19,7 +19,7 @@ double MAT_InvZMGaussian(double y, double sigma)
 
 double MAT_ZMGaussianDerivative(double x, double sigma)
 {
-    return -MAT_ZMGaussian(x, sigma) * x / (sigma*sigma);
+    return MAT_ZMGaussian(x, sigma) * x / (sigma*sigma);
 }
 
 /* Generate a ero mean normalized gaussian kernel (MAT_Array(float)) and its derivatives (MAT_Array(float)).
@@ -37,8 +37,8 @@ int MAT_ZMGaussianKernel(double sigma, MAT_Array **p_kernel, MAT_Array **p_deriv
     width = ((int)(2 * MAT_InvZMGaussian(_gaussian, sigma)) & -2) + 1;
     
 	/* Arrays allocations  */
-    kernel = *p_kernel = MAT_AllocArray(width, MAT_ARRAYTYPE_FLOAT, 0);
-    derivatives = *p_derivatives = MAT_AllocArray(width, MAT_ARRAYTYPE_FLOAT, 0);
+    kernel = *p_kernel = MAT_AllocArray(width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
+    derivatives = *p_derivatives = MAT_AllocArray(width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
     
     if ((NULL == kernel) || (NULL == derivatives))
     {
@@ -105,34 +105,28 @@ int MAT_ArrayConvolve(
 	return 0;
 }
 
-int MAT_ArrayConvolve2DHoriz(
-    MAT_Array *kernel,
-    MAT_Array *input,
-    MAT_Array *output,
-    unsigned int width,
-    unsigned int height)
+int MAT_MatrixConvolveCols(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output)
 {
     int x, y, k, k_width, k_halfwidth;
     
-    if (kernel->type != input->type) return 1;
-	if (!MAT_SAMEARRAYTYPE(input, output)) return 1;
-	if (width*height > input->width) return 1;
+    if (!MAT_SAMEMATRIXTYPE(input, output)) return 1;
+    if (kernel->type != input->array.type) return 1;
 
 	k_width = kernel->width;
 	k_halfwidth = k_width / 2;
 
-#define _CONVOLVE2DHORIZ(T, in, out, inc, idx)                          \
+#define _CONVOLVECOLS(T, in, out, inc, idx)                             \
 	{                                                                   \
-		T *pai = in;                                                    \
-		T *pao = out;                                                   \
-		for (y=0; y < height; y++, pai += width)                        \
+		T *pai = (T *)(in);                                             \
+		T *pao = (T *)(out);                                            \
+		for (y=0; y < input->nrows; y++, pai += input->ncols)           \
 		{                                                               \
-            for (x=0; x < width; x++)                                   \
+            for (x=0; x < input->ncols; x++)                            \
             {                                                           \
                 T sum;                                                  \
                 for (sum=0, k=0; k < k_width; k++)                      \
                 {                                                       \
-                    int n = CLAMP(0, x + k - k_halfwidth, width);       \
+                    int n = CLAMP(0, x + k - k_halfwidth, input->ncols); \
                     sum += kernel->data.T##_ptr[k] * (pai + n)[0];      \
                 }                                                       \
                 pao[idx] = sum;                                         \
@@ -141,48 +135,42 @@ int MAT_ArrayConvolve2DHoriz(
 		}                                                               \
 	}
 
-    switch (input->type)
+    switch (input->array.type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
-			_CONVOLVE2DHORIZ(float, input->data.float_ptr, output->data.float_ptr, 1, 0);
+			_CONVOLVECOLS(float, input->array.data.float_ptr, output->array.data.float_ptr, 1, 0);
 			break;
 		
 		case MAT_ARRAYTYPE_DOUBLE:
-			_CONVOLVE2DHORIZ(double, input->data.double_ptr, output->data.double_ptr, 1, 0);
+			_CONVOLVECOLS(double, input->array.data.double_ptr, output->array.data.double_ptr, 1, 0);
 			break;
 	}
 	return 0;
 }
 
-int MAT_ArrayConvolve2DVert(
-    MAT_Array *kernel,
-    MAT_Array *input,
-    MAT_Array *output,
-    unsigned int width,
-    unsigned int height)
+int MAT_MatrixConvolveRows(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output)
 {
     int x, y, k, k_width, k_halfwidth;
     
-    if (kernel->type != input->type) return 1;
-	if (!MAT_SAMEARRAYTYPE(input, output)) return 1;
-	if (width*height > input->width) return 1;
+    if (!MAT_SAMEMATRIXTYPE(input, output)) return 1;
+    if (kernel->type != input->array.type) return 1;
 
 	k_width = kernel->width;
 	k_halfwidth = k_width / 2;
 
-#define _CONVOLVE2DVERT(T, in, out, inc, idx)                           \
+#define _CONVOLVEROWS(T, in, out, inc, idx)                             \
 	{                                                                   \
-        T *pao = (out);                                                 \
-        for (y=0; y < height; y++)                                      \
+        T *pao = (T *)(out);                                            \
+        for (y=0; y < input->nrows; y++)                                \
 		{                                                               \
-            T *pai = (in);                                              \
-            for (x=0; x < width; x++, pai++)                            \
+            T *pai = (T *)(in);                                         \
+            for (x=0; x < input->ncols; x++, pai++)                     \
             {                                                           \
                 T sum;                                                  \
                 for (sum=0, k=0; k < k_width; k++)                      \
                 {                                                       \
-                    int n = CLAMP(0, y + k - k_halfwidth, height);      \
-                    sum += kernel->data.T##_ptr[k] * (pai + n*width)[0]; \
+                    int n = CLAMP(0, y + k - k_halfwidth, input->nrows); \
+                    sum += kernel->data.T##_ptr[k] * (pai + n*input->ncols)[0]; \
                 }                                                       \
                 pao[idx] = sum;                                         \
                 pao += inc;                                             \
@@ -190,49 +178,44 @@ int MAT_ArrayConvolve2DVert(
 		}                                                               \
 	}
 
-    switch (input->type)
+    switch (input->array.type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
-			_CONVOLVE2DVERT(float, input->data.float_ptr, output->data.float_ptr, 1, 0);
+			_CONVOLVEROWS(float, input->array.data.float_ptr, output->array.data.float_ptr, 1, 0);
 			break;
 		
 		case MAT_ARRAYTYPE_DOUBLE:
-			_CONVOLVE2DVERT(double, input->data.double_ptr, output->data.double_ptr, 1, 0);
+			_CONVOLVEROWS(double, input->array.data.double_ptr, output->array.data.double_ptr, 1, 0);
 			break;
 	}
+
 	return 0;
 }
 
-int MAT_ArrayConvolve2D(
-    MAT_Array *kernel,
-    MAT_Array *input,
-    MAT_Array *output,
-    unsigned int width,
-    unsigned int height)
+int MAT_MatrixConvolve(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output)
 {
     MAT_Array *tmp;
     int x, y, k, k_width, k_halfwidth;
-    
-    if (kernel->type != input->type) return 1;
-	if (!MAT_SAMEARRAYTYPE(input, output)) return 1;
-	if (width*height > input->width) return 1;
 
-    tmp = MAT_AllocArray(input->width, input->type, 0);
+    if (!MAT_SAMEMATRIXTYPE(input, output)) return 1;
+    if (kernel->type != input->array.type) return 1;
+
+    tmp = MAT_AllocArray(input->array.width, input->array.type, 0, NULL);
     if (NULL == tmp) return 1;
 
 	k_width = kernel->width;
 	k_halfwidth = k_width / 2;
 
-    switch (input->type)
+    switch (input->array.type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
-            _CONVOLVE2DHORIZ(float, input->data.float_ptr, tmp->data.float_ptr, 1, 0);
-			_CONVOLVE2DVERT(float, tmp->data.float_ptr, output->data.float_ptr, 1, 0);
+            _CONVOLVECOLS(float, input->array.data.float_ptr, tmp->data.float_ptr, 1, 0);
+			_CONVOLVEROWS(float, tmp->data.float_ptr, output->array.data.float_ptr, 1, 0);
 			break;
 		
 		case MAT_ARRAYTYPE_DOUBLE:
-			_CONVOLVE2DHORIZ(double, input->data.double_ptr, tmp->data.double_ptr, 1, 0);
-			_CONVOLVE2DVERT(double, tmp->data.double_ptr, output->data.double_ptr, 1, 0);
+			_CONVOLVECOLS(double, input->array.data.double_ptr, tmp->data.double_ptr, 1, 0);
+			_CONVOLVEROWS(double, tmp->data.double_ptr, output->array.data.double_ptr, 1, 0);
 			break;
 	}
 
@@ -240,64 +223,61 @@ int MAT_ArrayConvolve2D(
 	return 0;
 }
 
-int MAT_ArrayConvolveAndDerivative2D(
+int MAT_MatrixConvolveAndDerivative(
     MAT_Array *gaussian,
     MAT_Array *derivatives,
-    MAT_Array *input,
-    MAT_Array *output,
-    unsigned int width,
-    unsigned int height)
+    MAT_Matrix *input,
+    MAT_Matrix *output)
 {
     MAT_Array *tmp, *kernel;
     int x, y, k, k_width, k_halfwidth;
     
-    if (gaussian->type != input->type) return 1;
+    if (gaussian->type != input->array.type) return 1;
     if (gaussian->type != derivatives->type) return 1;
     if (gaussian->width != derivatives->width) return 1;
-	if (output->type != input->type) return 1;
-    if (output->width < 3*input->width) return 1;
-	if (width*height > input->width) return 1;
+	if (output->array.type != input->array.type) return 1;
+    if (output->ncols < 3*input->ncols) return 1;
 
-    tmp = MAT_AllocArray(input->width, input->type, 0);
+    tmp = MAT_AllocArray(input->array.width, input->array.type, 0, NULL);
     if (NULL == tmp) return 1;
 
 	k_width = gaussian->width;
 	k_halfwidth = k_width / 2;
 
-    switch (input->type)
+    switch (input->array.type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
             /* Gaussian */
             kernel = gaussian;
-            _CONVOLVE2DVERT(float, input->data.float_ptr, tmp->data.float_ptr, 1, 0);
-			_CONVOLVE2DHORIZ(float, tmp->data.float_ptr, output->data.float_ptr, 3, 0);
+            _CONVOLVEROWS(float, input->array.data.float_ptr, tmp->data.float_ptr, 1, 0);
+			_CONVOLVECOLS(float, tmp->data.float_ptr, output->array.data.float_ptr, 3, 0);
             
             /* X-Derivatives */
             kernel = derivatives;
-			_CONVOLVE2DHORIZ(float, tmp->data.float_ptr, output->data.float_ptr, 3, 1);
+			_CONVOLVECOLS(float, tmp->data.float_ptr, output->array.data.float_ptr, 3, 1);
 
             /* Y-Derivatives */
             kernel = gaussian;
-            _CONVOLVE2DHORIZ(float, input->data.float_ptr, tmp->data.float_ptr, 1, 0);
+            _CONVOLVECOLS(float, input->array.data.float_ptr, tmp->data.float_ptr, 1, 0);
             kernel = derivatives;
-			_CONVOLVE2DVERT(float, tmp->data.float_ptr, output->data.float_ptr, 3, 2);
+			_CONVOLVEROWS(float, tmp->data.float_ptr, output->array.data.float_ptr, 3, 2);
 			break;
 		
 		case MAT_ARRAYTYPE_DOUBLE:
 			/* Gaussian */
             kernel = gaussian;
-            _CONVOLVE2DVERT(double, input->data.double_ptr, tmp->data.double_ptr, 1, 0);
-			_CONVOLVE2DHORIZ(double, tmp->data.double_ptr, output->data.double_ptr, 3, 0);
-            
+            _CONVOLVEROWS(double, input->array.data.double_ptr, tmp->data.double_ptr, 1, 0);
+			_CONVOLVECOLS(double, tmp->data.double_ptr, output->array.data.double_ptr, 3, 0);
+           
             /* X-Derivatives */
             kernel = derivatives;
-			_CONVOLVE2DHORIZ(double, tmp->data.double_ptr, output->data.double_ptr, 3, 1);
+			_CONVOLVECOLS(double, tmp->data.double_ptr, output->array.data.double_ptr, 3, 1);
 
             /* Y-Derivatives */
             kernel = gaussian;
-            _CONVOLVE2DHORIZ(double, input->data.double_ptr, tmp->data.double_ptr, 1, 0);
+            _CONVOLVECOLS(double, input->array.data.double_ptr, tmp->data.double_ptr, 1, 0);
             kernel = derivatives;
-			_CONVOLVE2DVERT(double, tmp->data.double_ptr, output->data.double_ptr, 3, 2);
+			_CONVOLVEROWS(double, tmp->data.double_ptr, output->array.data.double_ptr, 3, 2);
 			break;
 	}
 

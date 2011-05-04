@@ -1,5 +1,5 @@
-#include "handler.h"
-#include "error.h"
+#include "imtool/handler.h"
+#include "imtool/error.h"
 #include "math/convolution.h"
 
 #include <stdio.h>
@@ -12,6 +12,7 @@ int main(int argc, char **argv)
 	MAT_Array *kernel;
 	MAT_Array *derivatives;
 	double sigma;
+    char *name;
 	
 	if (argc < 4)
 	{
@@ -36,6 +37,17 @@ int main(int argc, char **argv)
 	printf("Generating grayscale version of input image ");
 	err = IMT_Grayscale(input, &gray);
 	if (err || !gray)
+	{
+		printf("[FAILED], %s\n", IMT_GetErrorString(err));
+		goto bye;
+	}
+	else
+		printf("[OK]\n");
+    
+    name = "gray.png";
+    printf("Saving gray image '%s' ", name);
+    err = IMT_Save(name, gray, NULL);
+    if (err)
 	{
 		printf("[FAILED], %s\n", IMT_GetErrorString(err));
 		goto bye;
@@ -92,7 +104,7 @@ int main(int argc, char **argv)
 		printf("[OK]\n");
 
     printf("Create pyramidal data of input image ");
-    level = IMT_GeneratePyramidalSubImages(gray, 0, sigma);
+    level = IMT_GeneratePyramidalSubImages(gray, 4, sigma);
 	if (level < 0)
 	{
 		printf("[FAILED]\n");
@@ -105,16 +117,16 @@ int main(int argc, char **argv)
     {
         IMT_Image *tmp;
         MAT_Array *pixel_plan;
-
+        
         /* Subimages are arrays of 3d vectors (pixel, dpx, dpy) */
-        pixel_plan = MAT_ExtractArrayPlan(gray->subimages[i], 3, 0);
+        pixel_plan = MAT_ExtractArrayPlan(&gray->subimages[i]->array, 3, 0);
         
         printf("Converting subimage %u  (%ux%u)", i, gray->width >> i, gray->height >> i);
-        err = IMT_ImageFromFloatArray(pixel_plan,
-                                      &tmp,
-                                      gray->format,
-                                      gray->width >> i,
-                                      gray->height >> i);
+        err = IMT_ImageFromFloat(&tmp,
+                                 gray->format,
+                                 gray->width >> i,
+                                 gray->height >> i,
+                                 pixel_plan->data.float_ptr);
         MAT_FreeArray(pixel_plan);
 
         if (err)
@@ -125,6 +137,7 @@ int main(int argc, char **argv)
         else
             printf("[OK]\n");
 
+        
         if (!err)
         {
             char name[80];

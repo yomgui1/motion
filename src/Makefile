@@ -16,6 +16,8 @@ WARNS = -Wno-pointer-sign -Wl,--traditional-format
 DEFINES = -D__MORPHOS_SHAREDLIBS=1
 endif
 
+###############################################################################
+
 FAST_DIR = detectors/fast
 FAST_SRC = \
 	$(FAST_DIR)/fast_9_detect.c \
@@ -25,19 +27,33 @@ FAST_SRC = \
 	$(FAST_DIR)/fast_utils.c \
 	$(FAST_DIR)/nonmax.c
 
-ALL_OBJS += $(FAST_SRC:%.c=%.o)
+FAST_OBJS = $(FAST_SRC:%.c=%.o)
+
+ALL_OBJS += $(FAST_OBJS)
+ALL_INCS += $(FAST_INCS)
+
+$(FAST_DIR)/%.o: $(FAST_DIR)/%.c $(FAST_INCS)
+
+###############################################################################
 
 MAT_DIR = math
 MAT_SRC = \
 	$(MAT_DIR)/array.c \
+	$(MAT_DIR)/matrix.c \
 	$(MAT_DIR)/convolution.c
-
 MAT_INCS = \
 	$(MAT_DIR)/array.h \
+	$(MAT_DIR)/matrix.h \
 	$(MAT_DIR)/convolution.h
 
-ALL_OBJS += $(MAT_SRC:%.c=%.o)
+MAT_OBJS = $(MAT_SRC:%.c=%.o)
+
+ALL_OBJS += $(MAT_OBJS)
 ALL_INCS += $(MAT_INCS)
+
+$(MAT_DIR)/%.o: $(MAT_DIR)/%.c $(MAT_INCS)
+
+###############################################################################
 
 IMT_DIR = imtool
 IMT_SRC = \
@@ -52,26 +68,40 @@ else
 IMT_SRC += $(IMT_DIR)/handler_sys_generic.c
 endif
 
-ALL_OBJS += $(IMT_SRC:%.c=%.o)
+IMT_OBJS = $(IMT_SRC:%.c=%.o)
+
+ALL_OBJS += $(IMT_OBJS)
+ALL_INCS += $(IMT_INCS)
+
+$(IMT_DIR)/%.o: $(IMT_DIR)/%.c $(IMT_INCS)
+
+###############################################################################
 
 KLT_DIR = matchers/klt
 KLT_SRC = \
 	$(KLT_DIR)/klt.c
 KLT_INCS = \
-	$(KLT_DIR)/context.h
-ALL_OBJS += $(KLT_SRC:%.c=%.o)
+	$(KLT_DIR)/klt.h
+
+KLT_OBJS = $(KLT_SRC:%.c=%.o)
+
+ALL_OBJS += $(KLT_OBJS)
 ALL_INCS += $(KLT_INCS)
 
+$(KLT_DIR)/%.o: $(KLT_DIR)/%.c $(KLT_INCS)
+
+###############################################################################
 
 all : libmotion.a
 
 tests: \
 	detectors/fast/tests \
 	math/tests \
-	imtool/tests
+	imtool/tests \
+	matchers/klt/tests
 
 clean:
-	rm libmotion.a $(ALL_OBJS)
+	-rm -f libmotion.a $(ALL_OBJS)
 
 .c.o:
 	$(CC) $(CPPFLAGS) -c -o $@ $<
@@ -79,5 +109,5 @@ clean:
 libmotion.a: $(ALL_OBJS)
 	$(AR) $(ARFLAGS) $@ $^
 
-%/tests: %/tests.o libmotion.a $(ALL_INCS)
+%/tests: %/tests.o libmotion.a
 	$(CC) $(CFLAGS) -o $@ $< -L. -lmotion $(LIBS)

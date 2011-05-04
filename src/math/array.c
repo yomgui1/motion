@@ -9,44 +9,77 @@ int MAT_SameArrayType(MAT_Array *left, MAT_Array *right)
 	return MAT_SAMEARRAYTYPE(left, right);
 }
 
-MAT_Array *MAT_AllocArray(unsigned int width, int type, int clear)
+MAT_Array *MAT_InitArray(MAT_Array *array, unsigned int width, int type, void *data)
 {
-    MAT_Array *array;
     unsigned int datatype_size=0;
-    unsigned int data_offset=(sizeof(MAT_Array)+15) & -16;
-    
+    unsigned int data_size;
+
     switch(type)
     {
 		case MAT_ARRAYTYPE_FLOAT: datatype_size = sizeof(float); break;
 		case MAT_ARRAYTYPE_DOUBLE: datatype_size = sizeof(double); break;
     }
 
-	if (clear)
-		array = calloc(data_offset + datatype_size*width, 1);
-	else
-		array = malloc(data_offset + datatype_size*width);
-		
-    if (array)
+    data_size = datatype_size*width;
+
+    if (NULL == data)
     {
-		array->type = type;
-		array->width = width;
-		array->datatype_size = datatype_size;
-        array->data.void_ptr = (void *)array + data_offset;
+        array->_alloc_data = malloc(data_size);
+        if (NULL == array->_alloc_data) return NULL;
+        array->data.void_ptr = array->_alloc_data;
     }
+    else
+    {
+        array->_alloc_data = NULL;
+        array->data.void_ptr = data;
+    }
+
+    array->type = type;
+    array->datatype_size = datatype_size;
+    array->width = width;
+
+    return array;
+}
+
+MAT_Array *MAT_AllocArray(
+    unsigned int width,
+    int type,
+    int clear,
+    void *data)
+{
+    MAT_Array *array;
+    
+    array = malloc(sizeof(*array));
+    if (NULL == array) return NULL;
+
+    if (NULL == MAT_InitArray(array, width, type, data))
+    {
+        free(array);
+        return NULL;
+    }
+
+    if (clear)
+        MAT_ZeroArray(array);
     
     return array;
 }
 
 void MAT_FreeArray(MAT_Array *array)
 {
+    free(array->_alloc_data);
     free(array);
+}
+
+void MAT_ZeroArray(MAT_Array *array)
+{
+    bzero(array->data.void_ptr, array->datatype_size * array->width);
 }
 
 MAT_Array *MAT_DupArray(MAT_Array *src)
 {
     MAT_Array *dst;
 
-    dst = MAT_AllocArray(src->width, src->type, 0);
+    dst = MAT_AllocArray(src->width, src->type, 0, NULL);
     if (NULL != dst)
         memcpy(dst->data.void_ptr, src->data.void_ptr, src->datatype_size * src->width);
 
@@ -58,7 +91,7 @@ MAT_Array *MAT_ExtractArrayPlan(MAT_Array *src, unsigned int max, unsigned int i
     MAT_Array *dst;
     unsigned int i;
 
-    dst = MAT_AllocArray(src->width/max, src->type, 0);
+    dst = MAT_AllocArray(src->width/max, src->type, 0, NULL);
     if (NULL != dst)
     {
         switch (src->type)
