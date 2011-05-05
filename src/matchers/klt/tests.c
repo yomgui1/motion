@@ -92,7 +92,6 @@ static int test_TrackFeatureAtLevel(void)
     float ex, ey;
 
     KLT_InitContextDefaults(&ctx);
-    ctx.pyramid_sigma = 0.9;
 
     err = IMT_AllocImage(&image1, IMT_PIXFMT_GRAY8, 51, 51, 0, NULL);
     err |= IMT_AllocImage(&image2, IMT_PIXFMT_GRAY8, 51, 51, 0, NULL);
@@ -110,18 +109,6 @@ static int test_TrackFeatureAtLevel(void)
 
     if ((NULL == image1->subimages[0]) || (NULL == image2->subimages[0]))
         goto bye;
-
-#if 0
-    int i, j;
-    MAT_Matrix *mat = image1->subimages[0];
-    for (i = 0; i < image1->height; ++i)  {
-        printf("%03u [ ", i);
-        for (j = 0; j < image1->width; ++j)  {
-            printf("%02x", (int)(mat->array.data.float_ptr[i*mat->ncols+j*3+2]*128.)+128);
-        }
-        printf(" ]\n");
-    }
-#endif
 
     pos1.x = x0;
     pos1.y = y0;
@@ -185,7 +172,7 @@ static int test_TrackFeature(void)
     ex = fabsf(f2.position.x-(x0+dx));
     ey = fabsf(f2.position.y-(y0+dy));
     printf("[dbg] error: (%f, %f)\n", ex, ey);
-    if ((ex < 0.01) && (ey < 0.01))
+    if ((ex < 0.001) && (ey < 0.001))
         res = 0;
     else
         res = 1;
@@ -224,7 +211,7 @@ static int test_TrackFeatures(
 
     if (NULL == filename3)
     {
-        num_corners = 1000;
+        num_corners = 100;
         corners = fast9_detect_limited(gray1->data, gray1->width, gray1->height, gray1->stride, 10, &num_corners, 1);
         printf("%u corners found\n", num_corners);
 
@@ -315,7 +302,6 @@ int main(int argc, char **argv)
     else
         fprintf(stderr, "OK\n");
 
-#if 0
     if (argc < 3)
 	{
 		fprintf(stderr, "No enough parameters\nUSAGE: %s <input_image1> <input_image2> [featureslist.fl]\n", argv[0]);
@@ -336,7 +322,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "FAILED\n");
     else
         fprintf(stderr, "OK\n");
-#endif
 
     return 0;
 }

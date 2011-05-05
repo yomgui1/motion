@@ -124,8 +124,8 @@ int MAT_MatrixConvolveHoriz(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *ou
 		{                                                               \
             for (x=0; x < input->ncols; x++, pao+=inc)                  \
             {                                                           \
-                T sum;                                                  \
-                for (sum=0, k=k_width; k >= 0; k--)                     \
+                T sum=0.0;                                              \
+                for (k=k_width-1; k >= 0; k--)                          \
                 {                                                       \
                     int xx = x+k_halfwidth-k;                           \
                     int n = CLAMP(0, xx, ncols-1);                      \
@@ -168,8 +168,8 @@ int MAT_MatrixConvolveVert(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *out
             T *pai = (T *)(in);                                         \
             for (x=0; x < ncols; x++, pai++, pao+=inc)                  \
             {                                                           \
-                T sum;                                                  \
-                for (sum=0, k=k_width; k >= 0; k--)                     \
+                T sum=0.0;                                              \
+                for (k=k_width-1; k >= 0; k--)                    		\
                 {                                                       \
                     int n = CLAMP(0, y+k_halfwidth-k, input->nrows-1);  \
                     sum += kernel->data.T##_ptr[k] * (pai + n*ncols)[0]; \
@@ -239,11 +239,27 @@ int MAT_MatrixConvolveAndDerivative(
 	if (output->array.type != input->array.type) return 1;
     if (output->ncols < 3*input->ncols) return 1;
 
+#if 0
+	{
+		int i,j;
+		MAT_Matrix *mat = input;
+		printf("Dumping input matrix @ %p, data=%p\n", output, output->array.data.void_ptr);
+		for (i = 0; i < mat->nrows; ++i)  {
+			printf("%p [", &mat->array.data.float_ptr[i*mat->ncols]);
+			for (j = 0; j < mat->ncols; j++)  {
+				printf(" %f", mat->array.data.float_ptr[i*mat->ncols+j]);
+			}
+			printf(" ]\n");
+		}
+	}
+#endif
+
     tmp = MAT_AllocArray(input->array.width, input->array.type, 0, NULL);
     if (NULL == tmp) return 1;
 
 	k_width = gaussian->width;
 	k_halfwidth = k_width / 2;
+//	printf("Gaussian width: %u\n", k_width);
 
     switch (input->array.type)
 	{
@@ -281,7 +297,38 @@ int MAT_MatrixConvolveAndDerivative(
 			_CONVOLVE_V(double, tmp->data.double_ptr, output->array.data.double_ptr+2, 3);
 			break;
 	}
+	
+	MAT_FreeArray(tmp);
 
-    MAT_FreeArray(tmp);
+#if 0
+	{
+		int i,j,k;
+		MAT_Matrix *mat = output;
+		printf("Dumping output matrix @ %p, data=%p\n", output, output->array.data.void_ptr);
+		for (k=0; k < 3; k++)
+		{
+			printf("Index %u\n", k);
+			for (i = 0; i < mat->nrows; ++i)  {
+				printf("%p [", &mat->array.data.float_ptr[i*mat->ncols+k]);
+				for (j = 0; j < mat->ncols; j+=3)  {
+					float v = mat->array.data.float_ptr[i*mat->ncols+j+k];
+					if (v)
+					{
+						if (k==0)
+							printf(" %02x", (int)(v*255.));
+						else
+							printf(" %+04d", (int)(v*128.));
+					}
+					else if (k)
+						printf("     ");
+					else
+						printf("   ");
+				}
+				printf(" ]\n");
+			}
+		}
+	}
+#endif
+    
 	return 0;
 }

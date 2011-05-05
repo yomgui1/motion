@@ -8,7 +8,7 @@ CPPFLAGS = 2>&1 -g -Wall $(WARNS) -O2 $(OPTS) $(INCLUDES) $(DEFINES)
 ARFLAGS = cru
 
 INCLUDES = -I. -Idetectors -Imatchers
-LIBS = -lpng
+LIBS = -lpng -lsyscall
 
 ifeq ("$(OS)","MorphOS")
 OPTS = -mmultiple -noixemul

@@ -457,6 +457,21 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
     base = IMT_GetFloatImage(image, 0);
     if (NULL == base)
         return -1;
+  
+#if 0      
+    {
+		int j;
+		MAT_Matrix *mat = base;
+		printf("Dumping base:\n");
+		for (i = 0; i < mat->nrows; ++i)  {
+			printf("%p [", &mat->array.data.float_ptr[i*mat->ncols]);
+			for (j = 0; j < mat->ncols; j++)  {
+				printf(" %f", mat->array.data.float_ptr[i*mat->ncols+j]);
+			}
+			printf(" ]\n");
+		}
+	}
+#endif
 
     /* compute gaussian & derivatives kernels */
     MAT_ZMGaussianKernel(sigma, &kernel, &derivatives);
@@ -470,7 +485,7 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
         image->subimages = malloc((max_level+1) * sizeof(MAT_Matrix*));
         if (NULL == image->subimages) return -1;
 
-        subimage = MAT_AllocMatrix(image->height, 3 * image->width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
+        subimage = MAT_AllocMatrix(image->height, 3*image->width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
         if (NULL == subimage)
         {
             free(image->subimages);
@@ -491,7 +506,7 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
         }
     }
 
-    /* Start with the highest level stored */
+    /* Start to compute level after the highest one stored */
     level = image->levels;
     sub_width = image->width >> level;
     sub_height = image->height >> level;
@@ -505,12 +520,13 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
     {
         unsigned int previous_width=sub_width;
 
-        level++;
+		level++;
         sub_width >>= 1;
         sub_height >>= 1;
 
+		//printf("Level %u, downsampling @ %ux%u...", level, sub_width, sub_height);
         subimage = MAT_AllocMatrix(sub_height, sub_width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
-        image->subimages[level] = MAT_AllocMatrix(sub_height, 3 * sub_width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
+        image->subimages[level] = MAT_AllocMatrix(sub_height, 3*sub_width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
         if ((NULL == subimage) || (NULL == image->subimages[level]))
         {
             MAT_FreeMatrix(subimage);
@@ -521,7 +537,7 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
             break;
         }
 
-        //printf("downsampling @ %ux%u...", sub_width, sub_height);
+		//printf("data @ %p\n", level, image->subimages[level]->array.data.void_ptr);
 
         if (previous_subimage)
             src = previous_subimage->array.data.float_ptr;
@@ -534,7 +550,7 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
             float *src_pixel = src;
             float *dst_pixel = dst;
 
-            printf("%u [", level);
+            //printf("%u [", level);
             for (x=0; x < sub_width; x++, src_pixel+=2, dst_pixel++)
             {
                 float sum;
@@ -545,11 +561,11 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
                 sum += src_pixel[0+previous_width];
                 sum += src_pixel[1+previous_width];
                 
-                printf("%02x", (int)((sum/4)*255));
+                //printf("%02x", (int)((sum/4)*255));
         
                 *dst_pixel = sum / 4.f;
             }
-            printf(" ]\n");
+            //printf(" ]\n");
         }
         //printf("done\n");
 
@@ -558,16 +574,6 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
 
         /* Apply Gaussian and derivatives kernels */
         MAT_MatrixConvolveAndDerivative(kernel, derivatives, subimage, image->subimages[level]);
-
-        int i, j;
-        MAT_Matrix *mat = image->subimages[1];
-        for (i = 0; i < mat->nrows; ++i)  {
-            printf("%03u [ ", i);
-            for (j = 0; j < mat->ncols/3; ++j)  {
-                printf("%02x", (int)(mat->array.data.float_ptr[i*mat->ncols+j*3+0]*255.)+0);
-            }
-            printf(" ]\n");
-        }
 
         previous_subimage = subimage;
     }

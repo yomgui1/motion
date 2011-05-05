@@ -3,10 +3,12 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #define CLAMP(a, v, b) (a<v?(v<b?v:b-1):a)
 
-/* This is a Join-LKT implementation as explained in paper
+/* This is a normal LKT implementation.
+** TODO: need to implement a joint-KLT as explained in paper
 ** "Joint Tracking of Features and Edges"
 ** by Stanley T. Birchfield and Shrinivas J. Pundlik.
 */
@@ -17,6 +19,32 @@ static float interpolate(const MAT_Matrix *matrix, int index, float x, float y)
     float ax = x-left;
     float ay = y-top;
     float *ptr = &matrix->array.data.float_ptr[top*matrix->ncols + 3*left + index];
+    
+    if (!((*ptr <= 1.0f) && (*(ptr+3) <= 1.0) && (*(ptr+(matrix->ncols)) <= 1.0) && (*(ptr+(matrix->ncols)+3) <= 1.0)))
+    {
+		printf("FATAL error in %s: invalid floating data from matrix @ %p\n", __FUNCTION__, matrix);
+		printf("Point is (%f, %f), index=%u\n", x, y, index);
+		if (matrix)
+		{			
+			printf("Matrix info: ncols=%u, nrows=%u, array width=%u [%s]\n",
+				   matrix->ncols, matrix->nrows, matrix->array.width,
+				   matrix->ncols*matrix->nrows==matrix->array.width?"OK":"NOK");
+			if (matrix->array.width == matrix->ncols*matrix->nrows)
+			{
+				unsigned int off;
+				
+				float *start = matrix->array.data.float_ptr;
+				float *end = matrix->array.data.float_ptr + matrix->array.width;
+				
+				off = top*matrix->ncols + 3*left + index;
+				printf("Point offset: +%u => %p\n", off, start + off);
+				printf("Matrix data: [%p, %p[\n", start, end);
+			}
+			else
+				printf("Matrix data: from %p, ending is not not well known!\n", matrix->array.data.void_ptr);
+		}
+		abort();
+    }
     
     return ((1-ax) * (1-ay) * *ptr +
 			   ax  * (1-ay) * *(ptr+3) +
@@ -57,19 +85,20 @@ static void computeZieiCoeff(
     float *Jxt,
     float *Jyt)
 {
-    const float cx1 = pos1->x;
-    const float cy1 = pos1->y;
-    const float cx2 = pos2->x;
-    const float cy2 = pos2->y;
-    const int hw = ctx->win_halfwidth, hh = ctx->win_halfheight;
+    float cx1 = pos1->x;
+    float cy1 = pos1->y;
+    float cx2 = pos2->x;
+    float cy2 = pos2->y;
+    int hw = ctx->win_halfwidth, hh = ctx->win_halfheight;
     int i, j;
 
     *Jxx = 0.0f; *Jxy = 0.0f; *Jyy = 0.0f;
     *Jxt = 0.0f; *Jyt = 0.0f;
 
+	//printf("Zi for (%g, %g) -> (%g, %g)\n", cx1, cy1, cx2, cy2);
     for (j=-hh ; j <= hh ; j++)
     {
-        printf("[");
+        //printf("[");
         for (i=-hw ; i <= hw; i++)
         {
             float x1 = CLAMP(0.0f, cx1+i, level1->ncols/3-1);
@@ -78,20 +107,20 @@ static void computeZieiCoeff(
             float y2 = CLAMP(0.0f, cy2+j, level2->nrows-1);
             float p1, p2, It, Ix, Iy;
 
-			//printf("x1=%f, y1=%f, x2=%f, y2=%f\n", x1,y1,x2,y2);
+			//dprintf("x1=%f, y1=%f, x2=%f, y2=%f\n", x1,y1,x2,y2);
 
             /* Get pixels value in both images (interpolate at subpixels) */
             p1 = interpolate(level1, 0, x1, y1);
             p2 = interpolate(level2, 0, x2, y2);
             It = p1 - p2;
-            //printf("p1=%f, p2=%f, x2=%f, y2=%f (%u, %u)\n", p1, p2, x2, y2, level2->ncols/3, level2->nrows);
 
             /* Do the same to sum gradients in both images */
-            Ix  = interpolate(level1, 1, x1, y1);
-            Ix  = interpolate(level2, 1, x2, y2);
-            printf(" %f", p1);
-            Iy  = interpolate(level1, 2, x1, y1);
-            Iy  = interpolate(level2, 2, x2, y2);
+            //Ix  = interpolate(level1, 1, x1, y1);
+            Ix = interpolate(level2, 1, x2, y2);
+            //Iy  = interpolate(level1, 2, x1, y1);
+            Iy = interpolate(level2, 2, x2, y2);
+            
+            //printf(" %g", p1*255.);
 
             *Jxx += Ix * Ix;
             *Jxy += Ix * Iy;
@@ -100,10 +129,9 @@ static void computeZieiCoeff(
             *Jxt += Ix * It;
             *Jyt += Iy * It;
         }
-        printf(" ]\n");
+        //printf(" ]\n");
     }
 }
-
 
 /* This function is just the simple solving of the linear system:
 **
@@ -120,7 +148,7 @@ static int solveTrackingEquation(
 {
 	float det = Jxx*Jyy - Jxy*Jxy;
     
-    printf("J=[%f %f %f], det=%f\n", Jxx, Jxy, Jyy, det);
+    //printf("J=[%g %g %g], det=%g\n", Jxx, Jxy, Jyy, det);
 	if (det < small_det)
 		return KLT_SMALL_DET;
 
@@ -129,7 +157,6 @@ static int solveTrackingEquation(
 	
 	return KLT_TRACKED;
 }
-
 
 int KLT_TrackFeatureAtLevel(
     const KLT_Context *ctx,
@@ -152,7 +179,7 @@ int KLT_TrackFeatureAtLevel(
         float Jxt, Jyt;      /* ei coeffs */
         float uxi, uyi;
 
-        printf(">> iter[%u]\n", i);
+        //printf(">> iter[%u]\n", i);
         computeZieiCoeff(ctx, level1, level2,
 						 pos1, pos2,
 						 &Jxx, &Jxy, &Jyy, 
@@ -169,7 +196,7 @@ int KLT_TrackFeatureAtLevel(
 		pos2->x += uxi;
 		pos2->y += uyi;
 
-        printf("[DBG] ui=[%f, %f]\n", pos2->x, pos2->y);
+        //printf("[DBG] ui=[%f, %f]\n", pos2->x, pos2->y);
 		
 		/* Feature goes out of image? */
 		if ((pos2->x < 0.0f) || (pos2->x >= level1->ncols) ||
@@ -179,7 +206,7 @@ int KLT_TrackFeatureAtLevel(
 		/* Stop on convergence */
 		if ((fabsf(uxi) < ctx->min_displacement) || (fabsf(uyi) < ctx->min_displacement))
         {
-            //printf("[DBG] Tracked in %u iteration(s)\n", i);
+            printf("[DBG] Tracked in %u iteration(s)\n", i);
 			return KLT_TRACKED;
         }
     }
@@ -242,7 +269,7 @@ int KLT_TrackFeature(
 	int level, max_level;
 	float max_level_div, sigma;
 
-    sigma = ctx->pyramid_sigma * (1 << ctx->max_pyramid_level);
+    sigma = ctx->pyramid_sigma;
 
     /* Prepare images */
     if(IMT_GeneratePyramidalSubImages(image1, ctx->max_pyramid_level, sigma) < 0)
@@ -271,16 +298,21 @@ int KLT_TrackFeature(
         pos1.x = feature1->position.x / level_div;
 		pos1.y = feature1->position.y / level_div;
 
-        printf("[DBG] Level %u: tracking at (%f, %f)...\n",
-               level, feature2->position.x*level_div, feature2->position.y*level_div);
+        //printf("[DBG] Level %u: tracking at (%f, %f)...\n",
+        //       level, feature2->position.x*level_div, feature2->position.y*level_div);
 		res = KLT_TrackFeatureAtLevel(ctx,
                                       image1->subimages[level],
                                       &pos1,
                                       image2->subimages[level],
                                       &feature2->position);
         feature1->status = res;
-        //printf("[DBG] Level %u: feature status %d, estimation: (%f, %f)\n",
-        //       level, res, feature2->position.x * level_div, feature2->position.y * level_div);
+        printf("[DBG] Level %u: (%f, %f) -> (%f, %f), status %d\n",
+               level,
+               pos1.x * level_div,
+               pos1.y * level_div,
+               feature2->position.x * level_div,
+               feature2->position.y * level_div,
+               res);
 
         if (res == KLT_TRACKED)
         {
@@ -360,8 +392,8 @@ void KLT_InitContextDefaults(KLT_Context *ctx)
     ctx->max_iterations = 10;
     ctx->win_halfwidth = 3;
     ctx->win_halfheight = 3;
-    ctx->pyramid_sigma = 0.9f;
+    ctx->pyramid_sigma = .9f;
     ctx->max_pyramid_level = 4;
     ctx->min_determinant = 1e-6;
-    ctx->min_displacement = 0.0001;
+    ctx->min_displacement = 1e-4;
 }
