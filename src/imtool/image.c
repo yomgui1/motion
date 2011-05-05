@@ -444,7 +444,7 @@ int IMT_ImageConvolve(MAT_Array *kernel, IMT_Image *input, IMT_Image *output)
 
 int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, double sigma)
 {
-    MAT_Matrix *base, *subimage;
+    MAT_Matrix *base, *subimage, *previous_subimage;
     MAT_Array *kernel=NULL, *derivatives=NULL;
     unsigned int x, y, i, sub_width, sub_height, level=0;
     float *src, *dst;
@@ -495,7 +495,7 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
     level = image->levels;
     sub_width = image->width >> level;
     sub_height = image->height >> level;
-    src = base->array.data.float_ptr;
+    previous_subimage = NULL;
 
     /* Downsample by 2 successive subimages while subimage's dimensions are greater than 1
      * or until we reach the maximal requested level.
@@ -503,7 +503,7 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
     //printf("\nStarting at level %u, size=%ux%u, max_level=%u\n", level, sub_width, sub_height, max_level);
     while ((level < max_level) && (sub_width > 1) && (sub_height > 1))
     {
-        unsigned int width=sub_width;
+        unsigned int previous_width=sub_width;
 
         level++;
         sub_width >>= 1;
@@ -515,36 +515,61 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
         {
             MAT_FreeMatrix(subimage);
             MAT_FreeMatrix(image->subimages[level]);
+            if (previous_subimage)
+                MAT_FreeMatrix(previous_subimage);
             level--;
             break;
         }
 
         //printf("downsampling @ %ux%u...", sub_width, sub_height);
+
+        if (previous_subimage)
+            src = previous_subimage->array.data.float_ptr;
+        else
+            src = base->array.data.float_ptr;
+
         dst = subimage->array.data.float_ptr;
-        for (y=0; y < sub_height; y++, src += 2*width, dst += sub_width)
+        for (y=0; y < sub_height; y++, src+=2*previous_width, dst+=sub_width)
         {
             float *src_pixel = src;
             float *dst_pixel = dst;
 
-            for (x=0; x < sub_width; x++, src_pixel += 2, dst_pixel++)
+            printf("%u [", level);
+            for (x=0; x < sub_width; x++, src_pixel+=2, dst_pixel++)
             {
                 float sum;
 
                 /* average source pixels to obtain sub-sampled pixel */
                 sum  = src_pixel[0];
                 sum += src_pixel[1];
-                sum += src_pixel[0+width];
-                sum += src_pixel[1+width];
-
+                sum += src_pixel[0+previous_width];
+                sum += src_pixel[1+previous_width];
+                
+                printf("%02x", (int)((sum/4)*255));
+        
                 *dst_pixel = sum / 4.f;
             }
+            printf(" ]\n");
         }
         //printf("done\n");
 
-        /* Apply gaussian & derivatives kernels */
+        if (previous_subimage)
+             MAT_FreeMatrix(previous_subimage);
+
+        /* Apply Gaussian and derivatives kernels */
         MAT_MatrixConvolveAndDerivative(kernel, derivatives, subimage, image->subimages[level]);
 
-        src = subimage->array.data.float_ptr;
+        int i, j;
+        MAT_Matrix *mat = image->subimages[1];
+        for (i = 0; i < mat->nrows; ++i)  {
+            printf("%03u [ ", i);
+            for (j = 0; j < mat->ncols/3; ++j)  {
+                printf("%02x", (int)(mat->array.data.float_ptr[i*mat->ncols+j*3+0]*255.)+0);
+            }
+            printf(" ]\n");
+        }
+
+        previous_subimage = subimage;
     }
 
     //printf("Reached level: %u\n", level);

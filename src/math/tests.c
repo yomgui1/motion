@@ -27,7 +27,7 @@ int main(int argc, char **argv)
 {
     MAT_Array *kernel, *derivatives;
     int width;
-    float sigma = .9;
+    float sigma = strtod(argv[1], NULL);
     MAT_Array *output, *test_7x7;
     float array_test[7*7] = {
         0,0,0,0,0,0,0,

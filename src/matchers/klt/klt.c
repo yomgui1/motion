@@ -6,9 +6,6 @@
 
 #define CLAMP(a, v, b) (a<v?(v<b?v:b-1):a)
 
-#define SMALL_DET (1e-6)
-#define DISP_CONV_THRESHOLD (1e-6)
-
 /* This is a Join-LKT implementation as explained in paper
 ** "Joint Tracking of Features and Edges"
 ** by Stanley T. Birchfield and Shrinivas J. Pundlik.
@@ -72,6 +69,7 @@ static void computeZieiCoeff(
 
     for (j=-hh ; j <= hh ; j++)
     {
+        printf("[");
         for (i=-hw ; i <= hw; i++)
         {
             float x1 = CLAMP(0.0f, cx1+i, level1->ncols/3-1);
@@ -88,9 +86,12 @@ static void computeZieiCoeff(
             It = p1 - p2;
             //printf("p1=%f, p2=%f, x2=%f, y2=%f (%u, %u)\n", p1, p2, x2, y2, level2->ncols/3, level2->nrows);
 
-            /* Do the same for gradients in the second image */
-            Ix = interpolate(level2, 1, x2, y2);
-            Iy = interpolate(level2, 2, x2, y2);
+            /* Do the same to sum gradients in both images */
+            Ix  = interpolate(level1, 1, x1, y1);
+            Ix  = interpolate(level2, 1, x2, y2);
+            printf(" %f", p1);
+            Iy  = interpolate(level1, 2, x1, y1);
+            Iy  = interpolate(level2, 2, x2, y2);
 
             *Jxx += Ix * Ix;
             *Jxy += Ix * Iy;
@@ -99,6 +100,7 @@ static void computeZieiCoeff(
             *Jxt += Ix * It;
             *Jyt += Iy * It;
         }
+        printf(" ]\n");
     }
 }
 
@@ -111,13 +113,15 @@ static void computeZieiCoeff(
 ** where [ux uy]T is the possible feature displacement to test.
 */
 static int solveTrackingEquation(
+    float small_det,
 	float Jxx, float Jxy, float Jyy,
     float Jxt, float Jyt,
     float *ux, float *uy)
 {
 	float det = Jxx*Jyy - Jxy*Jxy;
     
-	if (det < SMALL_DET)
+    printf("J=[%f %f %f], det=%f\n", Jxx, Jxy, Jyy, det);
+	if (det < small_det)
 		return KLT_SMALL_DET;
 
 	*ux = (Jyy*Jxt - Jxy*Jyt) / det;
@@ -148,6 +152,7 @@ int KLT_TrackFeatureAtLevel(
         float Jxt, Jyt;      /* ei coeffs */
         float uxi, uyi;
 
+        printf(">> iter[%u]\n", i);
         computeZieiCoeff(ctx, level1, level2,
 						 pos1, pos2,
 						 &Jxx, &Jxy, &Jyy, 
@@ -156,15 +161,15 @@ int KLT_TrackFeatureAtLevel(
         //printf("[DBG] Zi=[%g, %g, %g], det=%f\n", Jxx, Jxy, Jyy, Jxx*Jyy-Jxy*Jxy);
         //printf("[DBG] ei=[%g, %g]\n", Jxt, Jyt);
 
-		res = solveTrackingEquation(Jxx, Jxy, Jyy, Jxt, Jyt, &uxi, &uyi);
+		res = solveTrackingEquation(ctx->min_determinant, Jxx, Jxy, Jyy, Jxt, Jyt, &uxi, &uyi);
 		if (res != KLT_TRACKED)
 			return res;
 
-        //printf("[DBG] ui=[%f, %f]\n", uxi, uyi);
-			
 		/* Update ui (feature position in the second image) */
 		pos2->x += uxi;
 		pos2->y += uyi;
+
+        printf("[DBG] ui=[%f, %f]\n", pos2->x, pos2->y);
 		
 		/* Feature goes out of image? */
 		if ((pos2->x < 0.0f) || (pos2->x >= level1->ncols) ||
@@ -172,7 +177,7 @@ int KLT_TrackFeatureAtLevel(
 			return KLT_OOB;
 			
 		/* Stop on convergence */
-		if ((fabsf(uxi) < DISP_CONV_THRESHOLD) || (fabsf(uyi) < DISP_CONV_THRESHOLD))
+		if ((fabsf(uxi) < ctx->min_displacement) || (fabsf(uyi) < ctx->min_displacement))
         {
             //printf("[DBG] Tracked in %u iteration(s)\n", i);
 			return KLT_TRACKED;
@@ -235,12 +240,14 @@ int KLT_TrackFeature(
     KLT_Feature * feature2)
 {
 	int level, max_level;
-	float max_level_div;
-	
+	float max_level_div, sigma;
+
+    sigma = ctx->pyramid_sigma * (1 << ctx->max_pyramid_level);
+
     /* Prepare images */
-    if(IMT_GeneratePyramidalSubImages(image1, ctx->max_pyramid_level, ctx->pyramid_sigma) < 0)
+    if(IMT_GeneratePyramidalSubImages(image1, ctx->max_pyramid_level, sigma) < 0)
         return 1;
-    if(IMT_GeneratePyramidalSubImages(image2, ctx->max_pyramid_level, ctx->pyramid_sigma) < 0)
+    if(IMT_GeneratePyramidalSubImages(image2, ctx->max_pyramid_level, sigma) < 0)
         return 1;
 
     if (image1->levels <= image2->levels)
@@ -264,8 +271,8 @@ int KLT_TrackFeature(
         pos1.x = feature1->position.x / level_div;
 		pos1.y = feature1->position.y / level_div;
 
-        //printf("[DBG] Level %u: tracking at (%f, %f)...\n",
-        //       level, feature2->position.x*level_div, feature2->position.y*level_div);
+        printf("[DBG] Level %u: tracking at (%f, %f)...\n",
+               level, feature2->position.x*level_div, feature2->position.y*level_div);
 		res = KLT_TrackFeatureAtLevel(ctx,
                                       image1->subimages[level],
                                       &pos1,
@@ -350,9 +357,11 @@ int KLT_TrackFeatures(
 
 void KLT_InitContextDefaults(KLT_Context *ctx)
 {
-    ctx->max_iterations = 11;
+    ctx->max_iterations = 10;
     ctx->win_halfwidth = 3;
     ctx->win_halfheight = 3;
-    ctx->pyramid_sigma = .9;
+    ctx->pyramid_sigma = 0.9f;
     ctx->max_pyramid_level = 4;
+    ctx->min_determinant = 1e-6;
+    ctx->min_displacement = 0.0001;
 }

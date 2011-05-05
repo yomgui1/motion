@@ -12,8 +12,8 @@ extern int MAT_ArrayConvolve(
     MAT_Array *input,
     MAT_Array *output,
     int increment);
-extern int MAT_MatrixConvolveRows(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output);
-extern int MAT_MatrixConvolveCols(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output);
+extern int MAT_MatrixConvolveVert(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output);
+extern int MAT_MatrixConvolveHoriz(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output);
 extern int MAT_MatrixConvolve(MAT_Array *kernel, MAT_Matrix *input, MAT_Matrix *output);
 extern int MAT_MatrixConvolveAndDerivative(
     MAT_Array *gaussian,

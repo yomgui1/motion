@@ -29,7 +29,9 @@ typedef struct KLT_Context
     int win_width, win_height;
     int win_halfwidth, win_halfheight;
     int max_pyramid_level;
-    double pyramid_sigma;
+    float pyramid_sigma;
+    float min_determinant;
+    float min_displacement;
 
     /* dynamic parameters, don't touch */
     int nfeatures;
