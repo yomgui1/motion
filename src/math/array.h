@@ -34,8 +34,8 @@ extern MAT_Array *MAT_AllocArray(
     void *data);
 extern void MAT_FreeArray(MAT_Array *array);
 extern void MAT_ZeroArray(MAT_Array *array);
-extern MAT_Array *MAT_DupArray(MAT_Array *src);
-extern MAT_Array *MAT_ExtractArrayPlan(MAT_Array *src, unsigned int max, unsigned int index);
+extern MAT_Array *MAT_DupArray(const MAT_Array *src);
+extern MAT_Array *MAT_ExtractArrayPlan(const MAT_Array *src, unsigned int max, unsigned int index);
 extern void MAT_ScalarAddArray(MAT_Array *array, double value);
 extern void MAT_ScalarMulArray(MAT_Array *array, double value);
 extern void MAT_ScalarDivArray(MAT_Array *array, double value);

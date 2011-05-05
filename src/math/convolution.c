@@ -332,3 +332,104 @@ int MAT_MatrixConvolveAndDerivative(
     
 	return 0;
 }
+
+void MAT_BoxFilterHoriz(const MAT_Matrix *input, MAT_Matrix *output, int depth, int window_size)
+{
+	int halfwidth = (window_size - 1) / 2;
+	unsigned int i,j,k,ncols;
+	float *in = input->array.data.float_ptr;
+	float *out = output->array.data.float_ptr;
+  
+	ncols = input->ncols / depth;
+	
+	for (k=0; k < depth; k++)
+	{
+		for (i=0; i < input->nrows; i++)
+		{
+			float sum = 0;
+
+			/* Init. sum */
+			for (j=0; j < halfwidth; j++)
+				sum += in[(i*ncols + j)*depth + k];
+				
+			/* Fill left border */
+			for (j=0; j < halfwidth + 1; j++)
+			{
+				sum += in[(i*ncols + j + halfwidth)*depth + k];
+				out[(i*ncols + j)*depth + k] = sum;
+			}
+			
+			/* Fill interior */
+			for (j=halfwidth+1; j < ncols-halfwidth; j++)
+			{
+				sum -= in[(i*ncols + j - halfwidth - 1)*depth + k];
+				sum += in[(i*ncols + j + halfwidth)*depth + k];
+				out[(i*ncols + j)*depth + k] = sum;
+			}
+			
+			/* Fill right border */
+			for (j=ncols-halfwidth; j < ncols; j++)
+			{
+				sum -= in[(i*ncols + j - halfwidth - 1)*depth + k];
+				out[(i*ncols + j)*depth + k] = sum;
+			}
+		}
+	}
+}
+
+void MAT_BoxFilterVert(const MAT_Matrix *input, MAT_Matrix *output, int depth, int window_size)
+{
+	int halfwidth = (window_size - 1) / 2;
+	unsigned int i,j,k,ncols;
+	float *in = input->array.data.float_ptr;
+	float *out = output->array.data.float_ptr;
+  
+	ncols = input->ncols / 3;
+  
+	for (k=0; k < depth; k++)
+	{
+		for (j=0; j < ncols; j++)
+		{
+			float sum = 0;
+
+			/* Init. sum */
+			for (i=0; i < halfwidth; i++)
+				sum += in[(i*ncols + j)*depth + k];
+				
+			/* Fill left border */
+			for (i=0; i < halfwidth + 1; i++)
+			{
+				sum += in[((i + halfwidth)*ncols + j)*depth + k];
+				out[(i*ncols + j)*depth + k] = sum;
+			}
+			
+			/* Fill interior */
+			for (i=halfwidth+1; i < input->nrows-halfwidth; i++)
+			{
+				sum -= in[((i - halfwidth - 1)*ncols + j)*depth + k];
+				sum += in[((i + halfwidth)*ncols + j)*depth + k];
+				out[(i*ncols + j)*depth + k] = sum;
+			}
+			
+			/* Fill right border */
+			for (i=input->nrows-halfwidth; i < input->nrows; i++)
+			{
+				sum -= in[((i - halfwidth - 1)*ncols + j)*depth + k];
+				out[(i*ncols + j)*depth + k] = sum;
+			}
+		}
+	}
+}
+
+void MAT_BoxFilter(const MAT_Matrix *input, MAT_Matrix *output, int depth, int window_size)
+{
+	MAT_Matrix *tmp = MAT_AllocMatrixLike(input, 0);
+	
+	if (NULL == tmp) return;
+	
+	MAT_BoxFilterHoriz(input, tmp, depth, window_size);
+	MAT_BoxFilterVert(tmp, output, depth, window_size);
+	
+	MAT_FreeMatrix(tmp);
+}
+

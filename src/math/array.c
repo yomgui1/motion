@@ -75,7 +75,7 @@ void MAT_ZeroArray(MAT_Array *array)
     bzero(array->data.void_ptr, array->datatype_size * array->width);
 }
 
-MAT_Array *MAT_DupArray(MAT_Array *src)
+MAT_Array *MAT_DupArray(const MAT_Array *src)
 {
     MAT_Array *dst;
 
@@ -86,7 +86,7 @@ MAT_Array *MAT_DupArray(MAT_Array *src)
     return dst;
 }
 
-MAT_Array *MAT_ExtractArrayPlan(MAT_Array *src, unsigned int max, unsigned int index)
+MAT_Array *MAT_ExtractArrayPlan(const MAT_Array *src, unsigned int max, unsigned int index)
 {
     MAT_Array *dst;
     unsigned int i;

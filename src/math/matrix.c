@@ -1,6 +1,7 @@
 #include "math/matrix.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 MAT_Matrix *MAT_InitMatrix(
     MAT_Matrix *mat,
@@ -70,3 +71,14 @@ void MAT_SetIdentity(MAT_Matrix *mat)
             break;
     }
 }
+
+MAT_Matrix *MAT_AllocMatrixLike(const MAT_Matrix *friend, int copydata)
+{
+	MAT_Matrix *mat = MAT_AllocMatrix(friend->nrows, friend->ncols, friend->array.type, 0, NULL);
+	
+	if (copydata && (NULL != mat))
+		memcpy(mat->array.data.void_ptr, friend->array.data.void_ptr, friend->array.width);
+		
+	return mat;
+}
+

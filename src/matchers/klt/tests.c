@@ -211,7 +211,7 @@ static int test_TrackFeatures(
 
     if (NULL == filename3)
     {
-        num_corners = 100;
+        num_corners = 1000;
         corners = fast9_detect_limited(gray1->data, gray1->width, gray1->height, gray1->stride, 10, &num_corners, 1);
         printf("%u corners found\n", num_corners);
 
@@ -242,7 +242,7 @@ static int test_TrackFeatures(
             ((unsigned char *)gray1->data)[(int)pos->y * gray1->width + (int)pos->x] = 255;
         }
     }
-        
+    
     IMT_Save("gray1.png", gray1, NULL);
 
     res = KLT_TrackFeatures(&ctx, &ft, gray1, gray2);

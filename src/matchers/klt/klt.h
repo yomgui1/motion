@@ -37,6 +37,7 @@ typedef struct KLT_Context
     int nfeatures;
     KLT_Feature *features;
     KLT_Feature *estimated_features;
+    double min_trackness;
 } KLT_Context;
 
 extern void KLT_InitContextDefaults(KLT_Context *ctx);
@@ -62,5 +63,6 @@ extern int KLT_TrackFeature(
     KLT_Feature * feature1,
     IMT_Image *   image2,
     KLT_Feature * feature2);
+extern int KLT_DetectGoodFeatures(KLT_Context *ctx, MAT_Matrix *image, KLT_FeatureSet *fs);
 
 #endif /* KLT_H */

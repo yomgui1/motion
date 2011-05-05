@@ -20,5 +20,8 @@ extern int MAT_MatrixConvolveAndDerivative(
     MAT_Array *derivatives,
     MAT_Matrix *input,
     MAT_Matrix *output);
+extern void MAT_BoxFilterHoriz(const MAT_Matrix *input, MAT_Matrix *output, int depth, int window_size);
+extern void MAT_BoxFilterVert(const MAT_Matrix *input, MAT_Matrix *output, int depth, int window_size);
+extern void MAT_BoxFilter(const MAT_Matrix *input, MAT_Matrix *output, int depth, int window_size);
 
 #endif /* MAT_CONVOLUTION_H */

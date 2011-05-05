@@ -1,5 +1,6 @@
 #include "klt/klt.h"
 #include "math/matrix.h"
+#include "math/convolution.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -51,7 +52,6 @@ static float interpolate(const MAT_Matrix *matrix, int index, float x, float y)
 			(1-ax) *   ay   * *(ptr+(matrix->ncols)) +
 			   ax  *   ay   * *(ptr+(matrix->ncols)+3));
 }
-
 
 /*  This function is the sum of following libklt functions,
 ** but done in the same convolution loop:
@@ -133,6 +133,111 @@ static void computeZieiCoeff(
     }
 }
 
+/* Like computeZieiCoeff() but only Zi and for all pixels */
+static MAT_Matrix *computeZMatrix(const MAT_Matrix *image, int window_size)
+{
+	MAT_Matrix *zmat = MAT_AllocMatrixLike(image, 0);
+	
+	if (NULL != zmat)
+	{
+		unsigned int i, j;
+		float *src = image->array.data.float_ptr;
+		float *dst = zmat->array.data.float_ptr;
+		
+		/* Compute gradients per pixel */
+		for (i=0; i < zmat->nrows; i++)
+		{
+			for (j=0; j < zmat->ncols; j+=3, src+=3, dst+=3)
+			{
+				float gx = src[1];
+				float gy = src[2];
+				
+				dst[0] = gx*gx;
+				dst[1] = gx*gy;
+				dst[2] = gy*gy;
+			}
+		}
+		
+		/* Sum them over a the KLT window */
+		MAT_BoxFilter(zmat, zmat, 3, window_size);
+	}
+	
+	return zmat;
+}
+
+static double getMinEigenValue(double xx, double xy, double yy)
+{
+	return (xx + yy - sqrt((xx - yy) * (xx - yy) + 4*xy*xy)) / 2.0;
+}
+
+static MAT_Matrix *computeTrackness(const MAT_Matrix *zmat, double *trackness_mean)
+{
+	MAT_Matrix *trackness;
+	unsigned int i, j, w, h;
+	float *zmat_data = zmat->array.data.float_ptr;
+	float *trackness_data;
+	
+	trackness = MAT_AllocMatrix(zmat->nrows, zmat->ncols/3, MAT_MATRIXTYPE_FLOAT, 0, NULL);
+	if (NULL == trackness) return NULL;
+	
+	trackness_data = trackness->array.data.float_ptr;
+	w = trackness->ncols;
+	h = trackness->nrows;
+	
+	*trackness_mean = 0.0;
+	for (i=0; i < h; i++)
+	{
+		for (j=0; j < w; j++)
+		{
+			unsigned int jj=j*3;
+			double t = getMinEigenValue(zmat_data[i*zmat->ncols + jj + 0],
+									    zmat_data[i*zmat->ncols + jj + 1],
+									    zmat_data[i*zmat->ncols + jj + 2]);
+			trackness_data[i*w + j] = t;
+			*trackness_mean += t;
+		}
+	}
+	*trackness_mean /= trackness->array.width;
+	
+	return trackness;
+}
+
+static void findLocalMaxima(MAT_Matrix *trackness, double mean, KLT_FeatureSet *fs)
+{
+	unsigned int i,j,w,h;
+	float *data = trackness->array.data.float_ptr;
+	
+	w = trackness->nrows;
+	h = trackness->ncols;
+	
+#if 0
+	for (i=1; i < h-1; i++)
+	{
+		for (j=1; j < w-1; j++)
+		{
+			if (data[i*w+j] >= min_trackness
+				&& data[i*w+j] >= data[(i-1, j-1)]
+				&& data[i*w+j] >= data[(i-1, j  )]
+				&& data[i*w+j] >= data[(i-1, j+1)]
+				&& data[i*w+j] >= data[(i  , j-1)]
+				&& data[i*w+j] >= data[(i  , j+1)]
+				&& data[i*w+j] >= data[(i+1, j-1)]
+				&& data[i*w+j] >= data[(i+1, j  )]
+				&& data[i*w+j] >= data[(i+1, j+1)])
+			{
+				/* TODO: finish me! */
+
+				KLT_Feature *p = malloc();
+				p->position.y = i;
+				p->position.x = j;
+				p->trackness = data[i*w+j];
+				features->push_back(p);
+			}
+		}
+	}
+#endif
+}
+
 /* This function is just the simple solving of the linear system:
 **
 ** [Jxx Jxy] [ux] = [Jxt]
@@ -156,6 +261,59 @@ static int solveTrackingEquation(
 	*uy = (Jxx*Jyt - Jxy*Jxt) / det;
 	
 	return KLT_TRACKED;
+}
+
+/* Public API after this line ==================================================================================== */
+
+void KLT_InitContextDefaults(KLT_Context *ctx)
+{
+    ctx->max_iterations = 10;
+    ctx->win_halfwidth = 3;
+    ctx->win_halfheight = 3;
+    ctx->pyramid_sigma = .9f;
+    ctx->max_pyramid_level = 4;
+    ctx->min_determinant = 1e-6;
+    ctx->min_displacement = 1e-4;
+}
+
+int KLT_DetectGoodFeatures(KLT_Context *ctx, MAT_Matrix *image, KLT_FeatureSet *fs)
+{
+	int rc=1;
+	MAT_Matrix *zmat, *trackness;
+	double mean;
+	
+	zmat = computeZMatrix(image, ctx->win_halfwidth*2);
+	if (NULL != zmat)
+	{
+		trackness = computeTrackness(zmat, &mean);
+		if (NULL != trackness)
+		{
+			unsigned int i;
+			
+			ctx->min_trackness = mean;
+			//printf("trackness mean = %g\n", mean);
+			
+			for (i=0; i < fs->nfeatures; i++)
+			{
+				int x = fs->features[i].position.x;
+				int y = fs->features[i].position.y;
+				
+				float point_trackness = trackness->array.data.float_ptr[y*trackness->ncols + y];
+				
+				//printf("%f\n", fabsf(point_trackness-mean)/mean);
+			}
+			
+			//findLocalMaxima(trackness, mean, fs);
+			
+			rc = 0;
+			
+			MAT_FreeMatrix(trackness);
+		}
+	
+		MAT_FreeMatrix(zmat);
+	}
+
+	return rc;
 }
 
 int KLT_TrackFeatureAtLevel(
@@ -206,7 +364,7 @@ int KLT_TrackFeatureAtLevel(
 		/* Stop on convergence */
 		if ((fabsf(uxi) < ctx->min_displacement) || (fabsf(uyi) < ctx->min_displacement))
         {
-            printf("[DBG] Tracked in %u iteration(s)\n", i);
+            //printf("[DBG] Tracked in %u iteration(s)\n", i);
 			return KLT_TRACKED;
         }
     }
@@ -256,82 +414,6 @@ void KLT_TrackFeaturesAtLevel(
             ctx->estimated_features[i].position.y = pos1.y*2;
         }
 	}
-}
-
-/* Only used for debug */
-int KLT_TrackFeature(
-    KLT_Context * ctx,
-    IMT_Image *   image1,
-    KLT_Feature * feature1,
-    IMT_Image *   image2,
-    KLT_Feature * feature2)
-{
-	int level, max_level;
-	float max_level_div, sigma;
-
-    sigma = ctx->pyramid_sigma;
-
-    /* Prepare images */
-    if(IMT_GeneratePyramidalSubImages(image1, ctx->max_pyramid_level, sigma) < 0)
-        return 1;
-    if(IMT_GeneratePyramidalSubImages(image2, ctx->max_pyramid_level, sigma) < 0)
-        return 1;
-
-    if (image1->levels <= image2->levels)
-        max_level = image1->levels;
-    else
-        max_level = image1->levels;
-    max_level_div = 1 << max_level;
-	
-	/* Prepare estimated features position into second image */
-    feature2->position.x = feature1->position.x / max_level_div;
-    feature2->position.y = feature1->position.y / max_level_div;
-	
-    //printf("[DBG] Tracking feature at (%f, %f)\n",
-    //       feature1->position.x, feature1->position.y);
-	for (level=max_level; level >= 0; level--)
-    {
-        int res;
-        MAT_Vec2f pos1;
-        float level_div = 1 << level;
-
-        pos1.x = feature1->position.x / level_div;
-		pos1.y = feature1->position.y / level_div;
-
-        //printf("[DBG] Level %u: tracking at (%f, %f)...\n",
-        //       level, feature2->position.x*level_div, feature2->position.y*level_div);
-		res = KLT_TrackFeatureAtLevel(ctx,
-                                      image1->subimages[level],
-                                      &pos1,
-                                      image2->subimages[level],
-                                      &feature2->position);
-        feature1->status = res;
-        printf("[DBG] Level %u: (%f, %f) -> (%f, %f), status %d\n",
-               level,
-               pos1.x * level_div,
-               pos1.y * level_div,
-               feature2->position.x * level_div,
-               feature2->position.y * level_div,
-               res);
-
-        if (res == KLT_TRACKED)
-        {
-            /* get ready for the next level */
-            if (level > 0)
-            {
-                feature2->position.x *= 2;
-                feature2->position.y *= 2;
-            }
-        }
-        else if (level > 0)
-        {
-            /* Reset to the image1 position for next level */
-            feature2->position.x = pos1.x*2;
-            feature2->position.y = pos1.y*2;
-        }
-    }
-
-    return 0;
 }
 
 int KLT_TrackFeatures(
@@ -387,13 +469,78 @@ int KLT_TrackFeatures(
     return 0;
 }
 
-void KLT_InitContextDefaults(KLT_Context *ctx)
+/* Only used for testing */
+int KLT_TrackFeature(
+    KLT_Context * ctx,
+    IMT_Image *   image1,
+    KLT_Feature * feature1,
+    IMT_Image *   image2,
+    KLT_Feature * feature2)
 {
-    ctx->max_iterations = 10;
-    ctx->win_halfwidth = 3;
-    ctx->win_halfheight = 3;
-    ctx->pyramid_sigma = .9f;
-    ctx->max_pyramid_level = 4;
-    ctx->min_determinant = 1e-6;
-    ctx->min_displacement = 1e-4;
+	int level, max_level;
+	float max_level_div, sigma;
+
+    sigma = ctx->pyramid_sigma;
+
+    /* Prepare images */
+    if(IMT_GeneratePyramidalSubImages(image1, ctx->max_pyramid_level, sigma) < 0)
+        return 1;
+    if(IMT_GeneratePyramidalSubImages(image2, ctx->max_pyramid_level, sigma) < 0)
+        return 1;
+
+    if (image1->levels <= image2->levels)
+        max_level = image1->levels;
+    else
+        max_level = image1->levels;
+    max_level_div = 1 << max_level;
+	
+	/* Prepare estimated features position into second image */
+    feature2->position.x = feature1->position.x / max_level_div;
+    feature2->position.y = feature1->position.y / max_level_div;
+	
+    //printf("[DBG] Tracking feature at (%f, %f)\n",
+    //       feature1->position.x, feature1->position.y);
+	for (level=max_level; level >= 0; level--)
+    {
+        int res;
+        MAT_Vec2f pos1;
+        float level_div = 1 << level;
+
+        pos1.x = feature1->position.x / level_div;
+		pos1.y = feature1->position.y / level_div;
+
+        //printf("[DBG] Level %u: tracking at (%f, %f)...\n",
+        //       level, feature2->position.x*level_div, feature2->position.y*level_div);
+		res = KLT_TrackFeatureAtLevel(ctx,
+                                      image1->subimages[level],
+                                      &pos1,
+                                      image2->subimages[level],
+                                      &feature2->position);
+        feature1->status = res;
+        /*printf("[DBG] Level %u: (%f, %f) -> (%f, %f), status %d\n",
+               level,
+               pos1.x * level_div,
+               pos1.y * level_div,
+               feature2->position.x * level_div,
+               feature2->position.y * level_div,
+               res);*/
+
+        if (res == KLT_TRACKED)
+        {
+            /* get ready for the next level */
+            if (level > 0)
+            {
+                feature2->position.x *= 2;
+                feature2->position.y *= 2;
+            }
+        }
+        else if (level > 0)
+        {
+            /* Reset to the image1 position for next level */
+            feature2->position.x = pos1.x*2;
+            feature2->position.y = pos1.y*2;
+        }
+    }
+
+    return 0;
 }
