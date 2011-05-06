@@ -304,7 +304,7 @@ int main(int argc, char **argv)
 
     if (argc < 3)
 	{
-		fprintf(stderr, "No enough parameters\nUSAGE: %s <input_image1> <input_image2> [featureslist.fl]\n", argv[0]);
+		fprintf(stderr, "\nNo enough parameters to continue.\nUSAGE: %s <input_image1> <input_image2> [featureslist.fl]\n", argv[0]);
 		return 0;
 	}
 

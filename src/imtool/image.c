@@ -136,42 +136,74 @@ int IMT_GetChannels(IMT_Format fmt)
     }
 }
 
-int IMT_AllocImage(
-    IMT_Image ** p_image,
+int IMT_InitImage(
+    IMT_Image *  image,
     IMT_Format   fmt,
     unsigned int width,
     unsigned int height,
     unsigned int padding,
-    void *       options)
+    void *       data)
 {
-	IMT_Image *image;
     int bpp;
     unsigned int stride;
-	
+
     bpp = IMT_GetBytesPerPixel(fmt);
     if (bpp <= 0)
         return IMT_ERR_FORMAT;
 
     stride = bpp * width + padding;
 
-    //printf("\n[DBG] alloc image: %ux%u, fmt=%u, bpp=%u, stride=%u\n", width, height, fmt, bpp, stride);
+    //printf("\n[DBG] init image: %ux%u, fmt=%u, bpp=%u, stride=%u\n", width, height, fmt, bpp, stride);
 
-	image = malloc(sizeof(*image) + (height*stride));
-	if (image)
-	{
-		image->format = fmt;
-		image->width = width;
-		image->height = height;
-        image->bpp = bpp;
-		image->stride = stride;
-		image->data = ((char *)image) + sizeof(*image);
-        image->levels = 0;
-        image->floatimage = NULL;
-        image->subimages = NULL;
+    if (NULL == data)
+    {
+        image->_alloc_data = malloc(height * stride);
+        if (NULL == image->_alloc_data) return IMT_ERR_MEM;
+        image->data = image->_alloc_data;
+    }
+    else
+    {
+        image->_alloc_data = NULL;
+        image->data = data;
+    }
 
-        *p_image = image;
-	}
-	
+    image->format = fmt;
+    image->width = width;
+    image->height = height;
+    image->bpp = bpp;
+    image->stride = stride;
+    image->floatimage = NULL;
+
+    /* for pyramidal representation */
+    image->levels = 0;
+    image->subimages = NULL;
+
+    return IMT_ERR_NOERROR;
+}
+
+int IMT_AllocImage(
+    IMT_Image ** p_image,
+    IMT_Format   fmt,
+    unsigned int width,
+    unsigned int height,
+    unsigned int padding,
+    void *       data)
+{
+	IMT_Image *image;
+    
+	image = malloc(sizeof(*image));
+	if (NULL != image)
+    {
+        int err = IMT_InitImage(image, fmt, width, height, padding, data);
+        if (err)
+        {
+            free(image);
+            return err;
+        }
+    }
+
+    *p_image = image;
+
 	return IMT_ERR_NOERROR;
 }
 
@@ -196,11 +228,12 @@ void IMT_FreeImage(IMT_Image *image)
 	if (image)
     {
         IMT_FlushImage(image);
+        free(image->_alloc_data);
 		free(image);
     }
 }
 
-int IMT_ImageFromFloat(
+int IMT_AllocImageFromFloat(
     IMT_Image **p_image,
     IMT_Format format,
     unsigned int width,

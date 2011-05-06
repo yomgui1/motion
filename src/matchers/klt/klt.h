@@ -15,6 +15,7 @@ typedef struct KLT_Feature
 {
     MAT_Vec2f position;
     int status;
+    float trackness;
 } KLT_Feature;
 
 typedef struct KLT_FeatureSet

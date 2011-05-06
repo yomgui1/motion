@@ -27,17 +27,21 @@ int main(int argc, char **argv)
 {
     MAT_Array *kernel, *derivatives;
     int width;
-    float sigma = strtod(argv[1], NULL);
-    MAT_Array *output, *test_7x7;
-    float array_test[7*7] = {
-        0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,
-        0,0,1,1,1,0,0,
-        0,0,1,0,1,0,0,
-        0,0,1,1,1,0,0,
-        0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,
-    };
+    float sigma;
+
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage: %s <sigma>\n", argv[0]);
+        return 1;
+    }
+
+    sigma = strtod(argv[1], NULL);
+
+    if (sigma < 0.5)
+    {
+        fprintf(stderr, "Too low sigma value, must be >= 0.5.\n");
+        return 1;
+    }
 
     printf("Computing Gaussian kernel for sigma=%g", sigma);
     width = MAT_ZMGaussianKernel(sigma, &kernel, &derivatives);

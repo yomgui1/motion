@@ -122,11 +122,11 @@ int main(int argc, char **argv)
         pixel_plan = MAT_ExtractArrayPlan(&gray->subimages[i]->array, 3, 0);
         
         printf("Converting subimage %u  (%ux%u)", i, gray->width >> i, gray->height >> i);
-        err = IMT_ImageFromFloat(&tmp,
-                                 gray->format,
-                                 gray->width >> i,
-                                 gray->height >> i,
-                                 pixel_plan->data.float_ptr);
+        err = IMT_AllocImageFromFloat(&tmp,
+                                      gray->format,
+                                      gray->width >> i,
+                                      gray->height >> i,
+                                      pixel_plan->data.float_ptr);
         MAT_FreeArray(pixel_plan);
 
         if (err)

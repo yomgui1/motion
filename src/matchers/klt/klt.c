@@ -21,6 +21,7 @@ static float interpolate(const MAT_Matrix *matrix, int index, float x, float y)
     float ay = y-top;
     float *ptr = &matrix->array.data.float_ptr[top*matrix->ncols + 3*left + index];
     
+#ifdef WITH_ASSERT
     if (!((*ptr <= 1.0f) && (*(ptr+3) <= 1.0) && (*(ptr+(matrix->ncols)) <= 1.0) && (*(ptr+(matrix->ncols)+3) <= 1.0)))
     {
 		printf("FATAL error in %s: invalid floating data from matrix @ %p\n", __FUNCTION__, matrix);
@@ -46,6 +47,7 @@ static float interpolate(const MAT_Matrix *matrix, int index, float x, float y)
 		}
 		abort();
     }
+#endif
     
     return ((1-ax) * (1-ay) * *ptr +
 			   ax  * (1-ay) * *(ptr+3) +
@@ -210,32 +212,31 @@ static void findLocalMaxima(MAT_Matrix *trackness, double mean, KLT_FeatureSet *
 	w = trackness->nrows;
 	h = trackness->ncols;
 	
-#if 0
 	for (i=1; i < h-1; i++)
 	{
 		for (j=1; j < w-1; j++)
 		{
-			if (data[i*w+j] >= min_trackness
-				&& data[i*w+j] >= data[(i-1, j-1)]
-				&& data[i*w+j] >= data[(i-1, j  )]
-				&& data[i*w+j] >= data[(i-1, j+1)]
-				&& data[i*w+j] >= data[(i  , j-1)]
-				&& data[i*w+j] >= data[(i  , j+1)]
-				&& data[i*w+j] >= data[(i+1, j-1)]
-				&& data[i*w+j] >= data[(i+1, j  )]
-				&& data[i*w+j] >= data[(i+1, j+1)])
+			if (data[i*w+j] >= mean
+				&& data[i*w+j] >= data[(i-1)*w + (j-1)]
+                && data[i*w+j] >= data[(i-1)*w + (j  )]
+                && data[i*w+j] >= data[(i-1)*w + (j+1)]
+				&& data[i*w+j] >= data[(i  )*w + (j-1)]
+                && data[i*w+j] >= data[(i  )*w + (j+1)]
+                && data[i*w+j] >= data[(i+1)*w + (j-1)]
+                && data[i*w+j] >= data[(i+1)*w + (j  )]
+                && data[i*w+j] >= data[(i+1)*w + (j+1)])
 			{
-				/* TODO: finish me! */
+				KLT_Feature *p = malloc(sizeof(KLT_Feature));
 
-				KLT_Feature *p = malloc();
 				p->position.y = i;
 				p->position.x = j;
 				p->trackness = data[i*w+j];
-				features->push_back(p);
+                p->status = 0;
+
+				/* TODO: finish me! */
 			}
 		}
 	}
-#endif
 }
 
 /* This function is just the simple solving of the linear system:
@@ -288,23 +289,8 @@ int KLT_DetectGoodFeatures(KLT_Context *ctx, MAT_Matrix *image, KLT_FeatureSet *
 		trackness = computeTrackness(zmat, &mean);
 		if (NULL != trackness)
 		{
-			unsigned int i;
-			
 			ctx->min_trackness = mean;
-			//printf("trackness mean = %g\n", mean);
-			
-			for (i=0; i < fs->nfeatures; i++)
-			{
-				int x = fs->features[i].position.x;
-				int y = fs->features[i].position.y;
-				
-				float point_trackness = trackness->array.data.float_ptr[y*trackness->ncols + y];
-				
-				//printf("%f\n", fabsf(point_trackness-mean)/mean);
-			}
-			
-			//findLocalMaxima(trackness, mean, fs);
-			
+			findLocalMaxima(trackness, mean, fs);
 			rc = 0;
 			
 			MAT_FreeMatrix(trackness);
