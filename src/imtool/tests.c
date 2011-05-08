@@ -8,7 +8,7 @@
 int main(int argc, char **argv)
 {
 	int i, err, width, level;
-	IMT_Image *input, *output, *gray;
+	IMT_Image *input, *output;
 	MAT_Array *kernel;
 	MAT_Array *derivatives;
 	double sigma;
@@ -35,37 +35,17 @@ int main(int argc, char **argv)
 		printf("[OK]\n");
 		
 	printf("Generating grayscale version of input image ");
-	err = IMT_Grayscale(input, &gray);
-	if (err || !gray)
+	err = IMT_GenerateGrayscale(input, 0);
+	if (err)
 	{
 		printf("[FAILED], %s\n", IMT_GetErrorString(err));
-		goto bye;
-	}
-	else
-		printf("[OK]\n");
-    
-    name = "gray.png";
-    printf("Saving gray image '%s' ", name);
-    err = IMT_Save(name, gray, NULL);
-    if (err)
-	{
-		printf("[FAILED], %s\n", IMT_GetErrorString(err));
-		goto bye;
-	}
-	else
-		printf("[OK]\n");
-		
-	printf("Generating float data array of the gray image ");
-	if (NULL == IMT_GetFloatImage(gray, 0))
-	{
-		printf("[FAILED]\n");
 		goto bye;
 	}
 	else
 		printf("[OK]\n");
 		
 	printf("Allocating output image ");
-	err = IMT_AllocImage(&output, gray->format, gray->width, gray->height, 0, NULL);
+	err = IMT_AllocImage(&output, input->format, input->width, input->height, 0, NULL);
 	if (err || !output)
 	{
 		printf("[FAILED], %s\n", IMT_GetErrorString(err));
@@ -85,26 +65,16 @@ int main(int argc, char **argv)
 		printf("[OK], width=%u\n", width);
 	
 	printf("Convolve ");
-	if (IMT_ImageConvolve(kernel, gray, output))
+	if (IMT_ImageConvolve(kernel, input, output))
 	{
 		printf("[FAILED]\n");
 		goto bye;
 	}
 	else
 		printf("[OK]\n");
-			
-	printf("Revert float data into image data ");
-	err = IMT_FromFloatData(output);
-	if (err)
-	{
-		printf("[FAILED], %s\n", IMT_GetErrorString(err));
-		goto bye;
-	}
-	else
-		printf("[OK]\n");
 
     printf("Create pyramidal data of input image ");
-    level = IMT_GeneratePyramidalSubImages(gray, 4, sigma);
+    level = IMT_GeneratePyramidalSubImages(input, 4, sigma);
 	if (level < 0)
 	{
 		printf("[FAILED]\n");
@@ -113,20 +83,20 @@ int main(int argc, char **argv)
 	else
 		printf("[OK]\n");
 
-    for (i=0; i <= gray->levels; i++)
+    for (i=0; i <= input->levels; i++)
     {
         IMT_Image *tmp;
         MAT_Array *pixel_plan;
         
         /* Subimages are arrays of 3d vectors (pixel, dpx, dpy) */
-        pixel_plan = MAT_ExtractArrayPlan(&gray->subimages[i]->array, 3, 0);
+        pixel_plan = MAT_ExtractArrayPlan(&input->subimages[i]->array, 3, 0);
         
-        printf("Converting subimage %u  (%ux%u)", i, gray->width >> i, gray->height >> i);
+        printf("Converting subimage %u  (%ux%u)", i, input->width >> i, input->height >> i);
         err = IMT_AllocImageFromFloat(&tmp,
-                                      gray->format,
-                                      gray->width >> i,
-                                      gray->height >> i,
-                                      pixel_plan->data.float_ptr);
+									  IMT_PIXFMT_GRAY8,
+									  input->width >> i,
+									  input->height >> i,
+									  pixel_plan->data.float_ptr);
         MAT_FreeArray(pixel_plan);
 
         if (err)
@@ -156,7 +126,6 @@ int main(int argc, char **argv)
 		
 bye:
 	IMT_FreeImage(input);
-	IMT_FreeImage(gray);
 	IMT_FreeImage(output);
 	MAT_FreeArray(kernel);
 	MAT_FreeArray(derivatives);

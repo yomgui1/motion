@@ -111,8 +111,8 @@ int IMT_GetBytesPerPixel(IMT_Format fmt)
         case IMT_PIXFMT_GRAYA16:
             return 2;
         case IMT_PIXFMT_RGB24:
-            return 3;
-        case IMT_PIXFMT_RGBA32:
+            return 4;
+        case IMT_PIXFMT_ARGB32:
             return 4;
 
         default: return 0;
@@ -128,8 +128,8 @@ int IMT_GetChannels(IMT_Format fmt)
         case IMT_PIXFMT_GRAYA16:
             return 2;
         case IMT_PIXFMT_RGB24:
-            return 3;
-        case IMT_PIXFMT_RGBA32:
+            return 4;
+        case IMT_PIXFMT_ARGB32:
             return 4;
 
         default: return 0;
@@ -172,7 +172,7 @@ int IMT_InitImage(
     image->height = height;
     image->bpp = bpp;
     image->stride = stride;
-    image->floatimage = NULL;
+    image->grayscale = NULL;
 
     /* for pyramidal representation */
     image->levels = 0;
@@ -189,22 +189,22 @@ int IMT_AllocImage(
     unsigned int padding,
     void *       data)
 {
+	int err = IMT_ERR_NOERROR;
 	IMT_Image *image;
     
 	image = malloc(sizeof(*image));
 	if (NULL != image)
     {
-        int err = IMT_InitImage(image, fmt, width, height, padding, data);
+        err = IMT_InitImage(image, fmt, width, height, padding, data);
         if (err)
         {
             free(image);
-            return err;
+            image = NULL;
         }
     }
 
     *p_image = image;
-
-	return IMT_ERR_NOERROR;
+	return err;
 }
 
 void IMT_FlushImage(IMT_Image *image)
@@ -220,7 +220,8 @@ void IMT_FlushImage(IMT_Image *image)
         image->levels = 0;
     }
 
-    MAT_FreeMatrix(image->floatimage);
+    MAT_FreeMatrix(image->grayscale);
+    image->grayscale = NULL;
 }
 
 void IMT_FreeImage(IMT_Image *image)
@@ -249,22 +250,26 @@ int IMT_AllocImageFromFloat(
     return merge_from_float(*p_image, data);
 }
 
-int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst)
+int IMT_GenerateGrayscale(IMT_Image *src, int empty)
 {
-    int err;
 	unsigned int y, i;
-	char *pix_dst;
+	float *pix_dst;
 	
-	err = IMT_AllocImage(p_dst, IMT_PIXFMT_GRAY8,
-                         src->width, src->height, 0, NULL);
-	if (err)
-		return err;
+	if (NULL == src->grayscale)
+	{
+		src->grayscale = MAT_AllocMatrix(src->height, src->width, MAT_MATRIXTYPE_FLOAT, 0, NULL);
+		if (NULL == src->grayscale)
+			return IMT_ERR_MEM;
+	}
 
-	pix_dst = (*p_dst)->data;
+	if (empty)
+		return IMT_ERR_NOERROR;
 
+	pix_dst = src->grayscale->array.data.float_ptr;
+	
 	switch(src->format)
 	{
-		case IMT_PIXFMT_RGB24:
+		case IMT_PIXFMT_RGB24: /* 32bits quantities but high byte not used */
 			for (y=0; y < src->height; y++)
 			{
 				for (i=0; i < src->stride; i += src->bpp)
@@ -272,17 +277,17 @@ int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst)
 					unsigned char *pixel = src->data + (y*src->stride + i);
 					unsigned int sum;
 					
-					sum  = pixel[0]*6969ul;
-					sum += pixel[1]*23434ul;
-					sum += pixel[2]*2365ul;
+					sum  = pixel[1]*6969ul;
+					sum += pixel[2]*23434ul;
+					sum += pixel[3]*2365ul;
 					
-					pix_dst[0] = sum / 32768ul;
+					pix_dst[0] = sum / 8355840.;
 					pix_dst++;
 				}
 			}
 			break;
 			
-		case IMT_PIXFMT_RGBA32:
+		case IMT_PIXFMT_ARGB32:
 			for (y=0; y < src->height; y++)
 			{
 				for (i=0; i < src->stride; i += src->bpp)
@@ -290,12 +295,11 @@ int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst)
 					unsigned char *pixel = src->data + (y*src->stride + i);
 					unsigned int sum;
 					
-					sum  = pixel[0]*6969;
-					sum += pixel[1]*23434;
-					sum += pixel[2]*2365;
+					sum  = pixel[1]*6969;
+					sum += pixel[2]*23434;
+					sum += pixel[3]*2365;
 					
-					/* Need to round here, because if we just shift by 23 bits, (255, 255, 255) becomes 254 with alpha = 255. */
-					pix_dst[0] = roundf((sum * pixel[3]) / 8388608.f + .5f);
+					pix_dst[0] = (sum * pixel[0]) / 8355840.;
 					pix_dst++;
 				}
 			}
@@ -308,8 +312,7 @@ int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst)
 				{
 					unsigned char *pixel = src->data + (y*src->stride + i);
 					
-					/* Same issue as for RGBA32 */
-					pix_dst[0] = roundf(((int)pixel[0] * (int)pixel[1]) / 8.f + .5f);
+					pix_dst[0] = ((int)pixel[0] * (int)pixel[1]) / 510.;
 					pix_dst++;
 				}
 			}
@@ -318,39 +321,37 @@ int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst)
 		case IMT_PIXFMT_GRAY8:
 			for (y=0; y < src->height; y++)
 			{
-				memcpy(pix_dst, src->data + y*src->stride, (*p_dst)->stride);
-				pix_dst += (*p_dst)->stride;
+				for (i=0; i < src->stride; i += src->bpp)
+				{
+					unsigned char *pixel = src->data + (y*src->stride + i);
+					
+					pix_dst[0] = pixel[0] / 255.;
+					pix_dst++;
+				}
 			}
 			break;
 			
 		default:
 			fprintf(stderr, "%s: unsupported image source format (%u)\n", __FUNCTION__, src->format);
-			IMT_FreeImage(*p_dst);
-			*p_dst = NULL;
+			MAT_FreeMatrix(src->grayscale);
+			src->grayscale = NULL;
 			return IMT_ERR_FORMAT;
 	}
 
 	return IMT_ERR_NOERROR;
 }
 
-MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty)
+MAT_Matrix *IMT_GetFloatImage(IMT_Image *image)
 {
     unsigned int x, y;
     unsigned char *sp;
+    MAT_Matrix *floatmat;
     float *dp;
 
     /* Float array allocation */
-    if (NULL == image->floatimage)
-    {
-        image->floatimage = MAT_AllocMatrix(image->height, image->width, MAT_ARRAYTYPE_FLOAT, empty, NULL);
-        if (NULL == image->floatimage)
-            return NULL;
-    }
-    else
-        return image->floatimage;
-
-	if (empty)
-		return image->floatimage;
+    floatmat = MAT_AllocMatrix(image->height, image->width, MAT_ARRAYTYPE_FLOAT, 1, NULL);
+    if (NULL == floatmat)
+		return NULL;
 	
     /* Image data convertion */
     switch (image->bpp)
@@ -359,7 +360,7 @@ MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty)
             for (y=0; y < image->height; y++)
             {
                 sp = image->data + (y * image->stride);
-                dp = image->floatimage->array.data.float_ptr + (y * image->width);
+                dp = floatmat->array.data.float_ptr + (y * image->width);
                 
                 for (x=0; x < image->width; x++)
                 {
@@ -375,7 +376,7 @@ MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty)
             for (y=0; y < image->height; y++)
             {
                 sp = image->data + (y * image->stride);
-                dp = image->floatimage->array.data.float_ptr + (y * image->width);
+                dp = floatmat->array.data.float_ptr + (y * image->width);
 
                 for (x=0; x < image->width; x++)
                 {
@@ -392,7 +393,7 @@ MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty)
             for (y=0; y < image->height; y++)
             {
                 sp = image->data + (y * image->stride);
-                dp = image->floatimage->array.data.float_ptr + (y * image->width);
+                dp = floatmat->array.data.float_ptr + (y * image->width);
 
                 for (x=0; x < image->width; x++)
                 {
@@ -410,7 +411,7 @@ MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty)
             for (y=0; y < image->height; y++)
             {
                 sp = image->data + (y * image->stride);
-                dp = image->floatimage->array.data.float_ptr + (y * image->width);
+                dp = floatmat->array.data.float_ptr + (y * image->width);
 
                 for (x=0; x < image->width; x++)
                 {
@@ -429,7 +430,7 @@ MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty)
             for (y=0; y < image->height; y++)
             {
                 sp = image->data + (y * image->stride);
-                dp = image->floatimage->array.data.float_ptr + (y * image->width);
+                dp = floatmat->array.data.float_ptr + (y * image->width);
 
                 for (x=0; x < image->width; x++)
                 {
@@ -442,37 +443,25 @@ MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty)
             break;
     }
 
-    return image->floatimage;
+    return floatmat;
 }
 
-int IMT_FromFloatData(IMT_Image *image)
+int IMT_FromFloatMatrix(IMT_Image *image, MAT_Matrix *floatmat)
 {
-    if (NULL == image->floatimage)
-        return IMT_ERR_SYS;
-	
-    return merge_from_float(image, image->floatimage->array.data.float_ptr);
+    return merge_from_float(image, floatmat->array.data.float_ptr);
 }
 
 int IMT_ImageConvolve(MAT_Array *kernel, IMT_Image *input, IMT_Image *output)
 {
-	int res;
-	MAT_Matrix *tmp;
-
-    /* Works only on gray 8bits images */
-    if (input->format != IMT_PIXFMT_GRAY8)
-        return -1;
-
-	/* Make sure the images have float data arrays */
-	if (NULL == IMT_GetFloatImage(input, 0)) return 1;
-	if (NULL == IMT_GetFloatImage(output, 1)) return 1;
+	int err;
 	
-	tmp = MAT_AllocMatrix(input->height, input->width, MAT_ARRAYTYPE_FLOAT, 0, NULL);
-	if (NULL == tmp) return 1;
+	/* Make sure the images have their grascale float matrix */
+	err = IMT_GenerateGrayscale(input, 0);
+	if (err) return err;
+	err = IMT_GenerateGrayscale(output, 1);
+	if (err) return err;
 	
-    res = MAT_MatrixConvolve(kernel, input->floatimage, tmp);
-
-	MAT_FreeMatrix(tmp);
-	return res;
+    return MAT_MatrixConvolve(kernel, input->grayscale, output->grayscale);
 }
 
 int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, double sigma)
@@ -482,14 +471,10 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
     unsigned int x, y, i, sub_width, sub_height, level=0;
     float *src, *dst;
 
-    /* Works only on gray 8bits images */
-    if (image->format != IMT_PIXFMT_GRAY8)
+    /* Prepare grayscale data */
+    if (IMT_GenerateGrayscale(image, 0))
         return -1;
-
-    /* Make sure a float version exists */
-    base = IMT_GetFloatImage(image, 0);
-    if (NULL == base)
-        return -1;
+	base = image->grayscale;
   
 #if 0      
     {
@@ -506,7 +491,7 @@ int IMT_GeneratePyramidalSubImages(IMT_Image *image, unsigned int max_level, dou
 	}
 #endif
 
-    /* compute gaussian & derivatives kernels */
+    /* Compute gaussian & derivatives kernels */
     MAT_ZMGaussianKernel(sigma, &kernel, &derivatives);
     if (NULL == kernel)
         return -1;

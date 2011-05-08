@@ -191,86 +191,121 @@ static int test_TrackFeatures(
 {
     KLT_Context ctx;
     int err, res=-1, num_corners, i, count;
-    IMT_Image *image1, *image2;
-    IMT_Image *gray1, *gray2;
+    IMT_Image *image1=NULL, *image2=NULL, *tmp=NULL;
     xy *corners=NULL;
-    KLT_FeatureSet ft;
+    KLT_FeatureSet ftset = {0};
 
     KLT_InitContextDefaults(&ctx);
-    ctx.win_halfwidth = 3;
-    ctx.win_halfheight = 3;
-    ctx.max_pyramid_level = 4;
 
 	err = IMT_Load(filename1, &image1, NULL);
-    err |= IMT_Load(filename2, &image2, NULL);
-    if (err) goto bye;
+	if (err)
+	{
+		fprintf(stderr, "Failed to open image #1: '%s'\n", IMT_GetErrorString(err));
+		goto bye;
+	}
+	
+    err = IMT_Load(filename2, &image2, NULL);
+	if (err)
+	{
+		fprintf(stderr, "Failed to open image #2: '%s'\n", IMT_GetErrorString(err));
+		goto bye;
+	}
 
-    err = IMT_Grayscale(image1, &gray1);
-    err |= IMT_Grayscale(image2, &gray2);
+    err = IMT_GenerateGrayscale(image1, 0);
+    if (err) goto bye;
+    
+    err = IMT_GenerateGrayscale(image2, 0);
     if (err) goto bye;
 
     if (NULL == filename3)
     {
-        num_corners = 1000;
-        corners = fast9_detect_limited(gray1->data, gray1->width, gray1->height, gray1->stride, 10, &num_corners, 1);
-        printf("%u corners found\n", num_corners);
-
-        if ((NULL == corners) || !corners)
+		err = IMT_AllocImageFromFloat(&tmp, IMT_PIXFMT_GRAY8, image1->width, image1->height, image1->grayscale->array.data.float_ptr);
+		if (err)
+			goto bye;
+			
+        num_corners = 500;
+        corners = fast9_detect_limited(tmp->data, tmp->width, tmp->height, tmp->stride, 0.3, &num_corners, 1);
+        IMT_FreeImage(tmp);
+        
+        if (NULL == corners)
             goto bye;
 
-        ft.nfeatures = num_corners;
-        ft.features = malloc(sizeof(KLT_Feature)*num_corners);
+		printf("%u corners found\n", num_corners);
+        ftset.nfeatures = num_corners;
+        ftset.features = malloc(sizeof(KLT_Feature)*num_corners);
+        
+        if (!ftset.features)
+			goto bye;
+        
         for (i=0; i < num_corners; i++)
         {
-            ft.features[i].status = 0;
-            ft.features[i].position.x = corners[i].x;
-            ft.features[i].position.y = corners[i].y;
-            
-            ((unsigned char *)gray1->data)[corners[i].y*gray1->width + corners[i].x] = 255;
+            ftset.features[i].status = KLT_NOT_FOUND;
+            ftset.features[i].position.x = corners[i].x;
+            ftset.features[i].position.y = corners[i].y;
         }
     }
     else
     {
-        err = readKLTFeaturesList(filename3, &ft);
+        err = readKLTFeaturesList(filename3, &ftset);
         if (err)
             goto bye;
-
-        for (i=0; i < ft.nfeatures; i++)
-        {
-            MAT_Vec2f *pos = &ft.features[i].position;
-
-            ((unsigned char *)gray1->data)[(int)pos->y * gray1->width + (int)pos->x] = 255;
-        }
     }
-    
-    IMT_Save("gray1.png", gray1, NULL);
-
-    res = KLT_TrackFeatures(&ctx, &ft, gray1, gray2);
+        
+    res = KLT_TrackFeatures(&ctx, image1, image2, &ftset);
     printf("[DBG] KLT_TrackFeatures() resulted with %d\n", res);
 
 	count = 0;
-    for (i=0; i < ft.nfeatures; i++)
+    for (i=0; i < ftset.nfeatures; i++)
     {
-		if (ft.features[i].status == KLT_TRACKED)
-		{
-			((unsigned char *)gray2->data)[(int)ft.features[i].position.y*gray2->width + (int)ft.features[i].position.x] = 255;
+		if (ftset.features[i].status == KLT_TRACKED)
 			count++;
-		}
     }
     
-	printf("%u remains tracked\n" ,count);
-
-    IMT_Save("gray2.png", gray2, NULL);
+	printf("%u remains tracked\n", count);
+	
+	err = IMT_AllocImageFromFloat(&tmp, IMT_PIXFMT_GRAY8, image1->width, image1->height, image1->grayscale->array.data.float_ptr);
+	if (!err)
+	{
+		for (i=0; i < ftset.nfeatures; i++)
+		{
+			if (ftset.features[i].status == KLT_TRACKED)
+			{
+				int x = ftset.features[i].position.x;
+				int y = ftset.features[i].position.y;
+				
+				((unsigned char *)(tmp->data))[y*tmp->stride + x] = 255;
+			}
+		}
+			
+		IMT_Save("gray1.png", tmp, NULL);
+		IMT_FreeImage(tmp);
+	}
+	
+	err = IMT_AllocImageFromFloat(&tmp, IMT_PIXFMT_GRAY8, image2->width, image2->height, image2->grayscale->array.data.float_ptr);
+	if (!err)
+	{
+		for (i=0; i < ftset.nfeatures; i++)
+		{
+			if (ftset.features[i].status == KLT_TRACKED)
+			{
+				int x = ftset.features[i].estimation.x;
+				int y = ftset.features[i].estimation.y;
+				
+				((unsigned char *)(tmp->data))[y*tmp->stride + x] = 255;
+			}
+		}
+		
+		IMT_Save("gray2.png", tmp, NULL);
+		IMT_FreeImage(tmp);
+	}
 
     res = 0;
 
 bye:
+	free(corners);
+    free(ftset.features);
     IMT_FreeImage(image1);
     IMT_FreeImage(image2);
-    IMT_FreeImage(gray1);
-    IMT_FreeImage(gray2);
-    free(corners);
-    free(ft.features);
 
     return res;
 }

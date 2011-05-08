@@ -98,7 +98,7 @@ static int imt_png_load_from_file(const char *filename, IMT_Image **p_image, voi
 		switch(color_type)
 		{
 			case PNG_COLOR_TYPE_RGB: fmt = IMT_PIXFMT_RGB24; break;
-			case PNG_COLOR_TYPE_RGB_ALPHA: fmt = IMT_PIXFMT_RGBA32; break;
+			case PNG_COLOR_TYPE_RGB_ALPHA: fmt = IMT_PIXFMT_ARGB32; break;
 			case PNG_COLOR_TYPE_GRAY: fmt = IMT_PIXFMT_GRAY8; break;
 			case PNG_COLOR_TYPE_GRAY_ALPHA: fmt = IMT_PIXFMT_GRAYA16; break;
 				
@@ -113,6 +113,12 @@ static int imt_png_load_from_file(const char *filename, IMT_Image **p_image, voi
 			png_set_expand(png_ptr);
 			depth = 8;
 		}
+		
+		if (fmt == IMT_PIXFMT_ARGB32)
+			png_set_swap_alpha(png_ptr);
+		
+		if (fmt == IMT_PIXFMT_RGB24)
+			png_set_add_alpha(png_ptr, 0xff, PNG_FILLER_BEFORE);
 		
 		/* IMT Image allocation */
 		err = IMT_AllocImage(&image, fmt, width, height, 0, NULL);
@@ -196,13 +202,19 @@ static int imt_png_save_to_file(const char *filename, IMT_Image *image, void *op
 		{
 			case IMT_PIXFMT_GRAY8: color_type = PNG_COLOR_TYPE_GRAY; break;
 			case IMT_PIXFMT_GRAYA16: color_type = PNG_COLOR_TYPE_GRAY_ALPHA; break;
-			case IMT_PIXFMT_RGB24: color_type = PNG_COLOR_TYPE_RGB; break;
-			case IMT_PIXFMT_RGBA32: color_type = PNG_COLOR_TYPE_RGB_ALPHA; break;
+			case IMT_PIXFMT_RGB24: color_type = PNG_COLOR_TYPE_RGB_ALPHA; break;
+			case IMT_PIXFMT_ARGB32: color_type = PNG_COLOR_TYPE_RGB_ALPHA; break;
 			default:
 				fprintf(stderr, "Image format not supported (%u)\n", image->format);
 				err = IMT_ERR_FORMAT;
 				longjmp(png_jmpbuf(png_ptr), 1);
 		}
+		
+		if (color_type == PNG_COLOR_TYPE_RGB_ALPHA)
+			png_set_swap_alpha(png_ptr);
+		
+		//if (image->format == IMT_PIXFMT_RGB24)
+		//	png_set_filler(png_ptr, 0, PNG_FILLER_BEFORE);
 		
 		png_set_IHDR(png_ptr, info_ptr,
 					 image->width, image->height, depth, color_type,

@@ -364,53 +364,52 @@ void KLT_TrackFeaturesAtLevel(
     const MAT_Matrix *level1,
     const MAT_Matrix *level2)
 {
-    int i;
-	float level_div = 1 << level;
+	unsigned int i, sampling = 1ul << level;
 
 	for (i=0; i < ctx->nfeatures; i++)
 	{
 		int res;
 		MAT_Vec2f pos1;
 		
-		pos1.x = ctx->features[i].position.x / level_div;
-		pos1.y = ctx->features[i].position.y / level_div;
+		pos1.x = ctx->features[i].position.x / sampling;
+		pos1.y = ctx->features[i].position.y / sampling;
+		
+		res = KLT_TrackFeatureAtLevel(ctx, level1, &pos1, level2, &ctx->features[i].estimation);
+		ctx->features[i].status = res;
+		
+		/*printf("[dbg] L%u, F%u: pos1=(%f, %f), pos2=(%f, %f), res=%d\n",
+			   level, i, pos1.x, pos1.y,
+			   ctx->features[i].estimation.x,
+			   ctx->features[i].estimation.y, res);*/
 
-		res = KLT_TrackFeatureAtLevel(ctx, level1, &pos1, level2, &ctx->estimated_features[i].position);
-		//printf("[dbg] L%u, F%u: pos1=(%f, %f), pos2=(%f, %f)\n",
-		//	   level, i, pos1.x, pos1.y, ctx->estimated_features[i].position.x, ctx->estimated_features[i].position.y);
-        ctx->features[i].status = res;
-
-        /* XXX: Original libklt verify if the intensity over the searching window doesn't change
+        /* TODO: Original libklt verify if the intensity over the searching window doesn't change
 		 * more than a constante value. Should I do the same?
 		 */
 
-        if (res == KLT_TRACKED)
-        {
-            /* get ready for the next level */
-            if (level > 0)
-            {
-                ctx->estimated_features[i].position.x *= 2;
-                ctx->estimated_features[i].position.y *= 2;
-            }
-        }
-        else if (level > 0)
-        {
-            /* Reset to the image1 position for next level */
-            ctx->estimated_features[i].position.x = pos1.x*2;
-            ctx->estimated_features[i].position.y = pos1.y*2;
-        }
+		if (level > 0)
+		{
+			if (res != KLT_TRACKED)
+			{
+				/* Reset to the image1 position for next finer level */
+				ctx->features[i].estimation.x = pos1.x;
+				ctx->features[i].estimation.y = pos1.y;
+			}
+			
+			/* get ready for the next level */
+			ctx->features[i].estimation.x *= 2;
+			ctx->features[i].estimation.y *= 2;
+		}
 	}
 }
 
 int KLT_TrackFeatures(
     KLT_Context *ctx,
-    KLT_FeatureSet *features_set,
     IMT_Image *image1,
-    IMT_Image *image2)
+    IMT_Image *image2,
+    KLT_FeatureSet *ftset)
 {
 	int i, level, max_level;
-	float max_level_div;
-	KLT_Feature *estimated_features;
+	unsigned int sampling;
 	
 	ctx->win_width = 2*ctx->win_halfwidth + 1;
 	ctx->win_height = 2*ctx->win_halfheight + 1;
@@ -425,32 +424,21 @@ int KLT_TrackFeatures(
         max_level = image1->levels;
     else
         max_level = image1->levels;
-    max_level_div = 1 << max_level;
+    sampling = 1ul << max_level;
 
-	estimated_features = malloc(features_set->nfeatures * sizeof(KLT_Feature));
-    if (NULL == estimated_features) return 1;
-	
 	/* Prepare estimated features position into second image */
-	for (i=0; i < features_set->nfeatures; i++)
-	{
-        estimated_features[i].status = KLT_TRACKED;
-		estimated_features[i].position.x = features_set->features[i].position.x / max_level_div;
-		estimated_features[i].position.y = features_set->features[i].position.y / max_level_div;
-	}
+	/* YOMGUI: bad design... don't store dynamics into context */
+	ctx->nfeatures = ftset->nfeatures;
+	ctx->features = ftset->features;
 	
-    ctx->nfeatures = features_set->nfeatures;
-	ctx->features = features_set->features;
-	ctx->estimated_features = estimated_features;
+	for (i=0; i < ftset->nfeatures; i++)
+	{
+		ftset->features[i].estimation.x = ftset->features[i].position.x / sampling;
+		ftset->features[i].estimation.y = ftset->features[i].position.y / sampling;
+	}
 	
 	for (level=max_level; level >= 0; level--)
 		KLT_TrackFeaturesAtLevel(ctx, level, image1->subimages[level], image2->subimages[level]);
-		
-	/* TODO: and now? what to do of features estimated positions? */
-	for (i=0; i < features_set->nfeatures; i++)
-	{
-		features_set->features[i].position.x = estimated_features[i].position.x;
-		features_set->features[i].position.y = estimated_features[i].position.y;
-	}
 
     return 0;
 }

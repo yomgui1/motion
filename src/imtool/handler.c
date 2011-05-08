@@ -26,7 +26,7 @@ int IMT_Load(const char *filename, IMT_Image **p_image, void *options)
 {
     _IMT_Handler *handler;
     int err;
-
+    
     /* Let the system do the job first then try internals */
     if ((NULL != _system_handler) && (NULL != _system_handler->load))
     {
@@ -61,7 +61,7 @@ int IMT_Save(const char *filename, IMT_Image *image, void *options)
 {
     _IMT_Handler *handler;
     int err;
-	
+		
     /* Let the system do the job first then try internals */
     if ((NULL != _system_handler) && (NULL != _system_handler->save))
     {

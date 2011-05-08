@@ -14,6 +14,7 @@
 typedef struct KLT_Feature
 {
     MAT_Vec2f position;
+    MAT_Vec2f estimation;
     int status;
     float trackness;
 } KLT_Feature;
@@ -37,7 +38,6 @@ typedef struct KLT_Context
     /* dynamic parameters, don't touch */
     int nfeatures;
     KLT_Feature *features;
-    KLT_Feature *estimated_features;
     double min_trackness;
 } KLT_Context;
 
@@ -55,9 +55,9 @@ extern void KLT_TrackFeaturesAtLevel(
     const MAT_Matrix *level2);
 extern int KLT_TrackFeatures(
     KLT_Context *ctx,
-    KLT_FeatureSet *features_set,
     IMT_Image *image1,
-    IMT_Image *image2);
+    IMT_Image *image2,
+	KLT_FeatureSet *ftset);
 extern int KLT_TrackFeature(
     KLT_Context * ctx,
     IMT_Image *   image1,

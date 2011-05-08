@@ -13,7 +13,7 @@ typedef enum IMT_Format
     IMT_PIXFMT_GRAY8,
     IMT_PIXFMT_GRAYA16,
     IMT_PIXFMT_RGB24,
-    IMT_PIXFMT_RGBA32,
+    IMT_PIXFMT_ARGB32,
 } IMT_Format;
 
 typedef struct IMT_Image
@@ -27,7 +27,7 @@ typedef struct IMT_Image
     
     void *        _alloc_data;
     void *        data;         /* Raw image pixels data */
-    MAT_Matrix *  floatimage;   /* Same image but all channels converted as float, NULL if not used. */
+    MAT_Matrix *  grayscale;    /* Grascale version with all channels as float, NULL if not used. */
     MAT_Matrix ** subimages;    /* Array of levels 'MAT_Matrix *'. Used for pyramidal representation, NULL if not used */
 } IMT_Image;
 
@@ -47,9 +47,9 @@ extern int IMT_AllocImage(
     void *data);
 extern void IMT_FlushImage(IMT_Image *image);
 extern void IMT_FreeImage(IMT_Image *image);
-extern int IMT_Grayscale(IMT_Image *src, IMT_Image **p_dst);
-extern MAT_Matrix *IMT_GetFloatImage(IMT_Image *image, int empty);
-extern int IMT_FromFloatData(IMT_Image *image);
+extern int IMT_GenerateGrayscale(IMT_Image *src, int empty);
+//extern MAT_Matrix *IMT_GetFloatImage(IMT_Image *image);
+extern int IMT_FromFloatMatrix(IMT_Image *image, MAT_Matrix *floatmat);
 extern int IMT_AllocImageFromFloat(
     IMT_Image **p_image,
     IMT_Format format,

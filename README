@@ -8,7 +8,7 @@
 - changes:
  -> non fast_9 code removed.
  -> safe malloc() (API may return NULL now).
- -> code adapted for better integration.
+ -> code adapted for better integration and floating point image channels.
  -> added fast9_detect_limited() function to limit the number of returned
     features to N best ones, this function permits nonmax suppression as option.
 

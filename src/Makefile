@@ -95,7 +95,6 @@ $(KLT_DIR)/%.o: $(KLT_DIR)/%.c $(KLT_INCS)
 all : libmotion.a
 
 tests: \
-	detectors/fast/tests \
 	math/tests \
 	imtool/tests \
 	matchers/klt/tests
