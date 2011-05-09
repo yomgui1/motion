@@ -31,6 +31,8 @@ typedef struct IMT_Image
     MAT_Matrix ** subimages;    /* Array of levels 'MAT_Matrix *'. Used for pyramidal representation, NULL if not used */
 } IMT_Image;
 
+extern int IMT_GetBytesPerPixel(IMT_Format fmt);
+extern int IMT_GetChannels(IMT_Format fmt);
 extern int IMT_InitImage(
     IMT_Image *  image,
     IMT_Format   fmt,
