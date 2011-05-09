@@ -286,12 +286,19 @@ image_get_prop(PyImage *self, void *closure)
     return PyLong_FromUnsignedLong(value);
 }
 
+static PyObject *
+image_get_data(PyImage *self, void *closure)
+{
+    return PyBytes_FromStringAndSize(self->image->data, self->image->height * self->image->stride);
+}
+
 static PyGetSetDef image_getseters[] = {
-    {"grayscale", (getter)image_get_grayscale, NULL, "Return grayscale version of the image as a new Image object.", (void *)0},
+    {"grayscale", (getter)image_get_grayscale, NULL, "Return grayscale version of the image as a new Image object.", NULL},
     {"format", (getter)image_get_prop, NULL, "Return image format", (void*)0},
     {"width", (getter)image_get_prop, NULL, "Return image width", (void*)1},
     {"height", (getter)image_get_prop, NULL, "Return image height", (void*)2},
     {"stride", (getter)image_get_prop, NULL, "Return image stride", (void*)3},
+    {"data", (getter)image_get_data, NULL, "Return data as byte buffer", NULL},
     {NULL} /* sentinel */
 };
 
