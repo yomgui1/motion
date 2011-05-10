@@ -361,26 +361,27 @@ int KLT_TrackFeatureAtLevel(
 void KLT_TrackFeaturesAtLevel(
     const KLT_Context *ctx,
     int level,
+    KLT_FeatureSet *ftset,
     const MAT_Matrix *level1,
     const MAT_Matrix *level2)
 {
 	unsigned int i, sampling = 1ul << level;
 
-	for (i=0; i < ctx->nfeatures; i++)
+	for (i=0; i < ftset->nfeatures; i++)
 	{
 		int res;
 		MAT_Vec2f pos1;
 		
-		pos1.x = ctx->features[i].position.x / sampling;
-		pos1.y = ctx->features[i].position.y / sampling;
+		pos1.x = ftset->features[i].position.x / sampling;
+		pos1.y = ftset->features[i].position.y / sampling;
 		
-		res = KLT_TrackFeatureAtLevel(ctx, level1, &pos1, level2, &ctx->features[i].estimation);
-		ctx->features[i].status = res;
+		res = KLT_TrackFeatureAtLevel(ctx, level1, &pos1, level2, &ftset->features[i].estimation);
+		ftset->features[i].status = res;
 		
 		/*printf("[dbg] L%u, F%u: pos1=(%f, %f), pos2=(%f, %f), res=%d\n",
 			   level, i, pos1.x, pos1.y,
-			   ctx->features[i].estimation.x,
-			   ctx->features[i].estimation.y, res);*/
+			   ftset->features[i].estimation.x,
+			   ftset->features[i].estimation.y, res);*/
 
         /* TODO: Original libklt verify if the intensity over the searching window doesn't change
 		 * more than a constante value. Should I do the same?
@@ -391,14 +392,15 @@ void KLT_TrackFeaturesAtLevel(
 			if (res != KLT_TRACKED)
 			{
 				/* Reset to the image1 position for next finer level */
-				ctx->features[i].estimation.x = pos1.x;
-				ctx->features[i].estimation.y = pos1.y;
+				ftset->features[i].estimation.x = pos1.x;
+				ftset->features[i].estimation.y = pos1.y;
 			}
 			
 			/* get ready for the next level */
-			ctx->features[i].estimation.x *= 2;
-			ctx->features[i].estimation.y *= 2;
-		}
+			ftset->features[i].estimation.x *= 2;
+			ftset->features[i].estimation.y *= 2;
+		} else if (res == KLT_TRACKED)
+            ftset->num_tracked_features++;
 	}
 }
 
@@ -427,18 +429,15 @@ int KLT_TrackFeatures(
     sampling = 1ul << max_level;
 
 	/* Prepare estimated features position into second image */
-	/* YOMGUI: bad design... don't store dynamics into context */
-	ctx->nfeatures = ftset->nfeatures;
-	ctx->features = ftset->features;
-	
-	for (i=0; i < ftset->nfeatures; i++)
+    for (i=0; i < ftset->nfeatures; i++)
 	{
 		ftset->features[i].estimation.x = ftset->features[i].position.x / sampling;
 		ftset->features[i].estimation.y = ftset->features[i].position.y / sampling;
 	}
 	
+    ftset->num_tracked_features = 0;
 	for (level=max_level; level >= 0; level--)
-		KLT_TrackFeaturesAtLevel(ctx, level, image1->subimages[level], image2->subimages[level]);
+		KLT_TrackFeaturesAtLevel(ctx, level, ftset, image1->subimages[level], image2->subimages[level]);
 
     return 0;
 }

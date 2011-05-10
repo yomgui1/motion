@@ -22,6 +22,7 @@ typedef struct KLT_Feature
 typedef struct KLT_FeatureSet
 {
     int nfeatures;
+    int num_tracked_features;
     KLT_Feature *features;
 } KLT_FeatureSet;
 
@@ -36,8 +37,6 @@ typedef struct KLT_Context
     float min_displacement;
 
     /* dynamic parameters, don't touch */
-    int nfeatures;
-    KLT_Feature *features;
     double min_trackness;
 } KLT_Context;
 
@@ -51,6 +50,7 @@ extern int KLT_TrackFeatureAtLevel(
 extern void KLT_TrackFeaturesAtLevel(
     const KLT_Context *ctx,
     int level,
+    KLT_FeatureSet *ftset,
     const MAT_Matrix *level1,
     const MAT_Matrix *level2);
 extern int KLT_TrackFeatures(
