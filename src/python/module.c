@@ -23,6 +23,8 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
+/* THIS IS A PYTHON3 MODULE */
+
 #include <Python.h>
 #include <structmember.h>
 #include <stdint.h>
@@ -373,17 +375,27 @@ static PyObject *
 ftset_get_positions(PyFeatureSet *self, void *closure)
 {
     PyObject *result;
-
-    result = PyTuple_New(self->ftset.nfeatures);
+	int num;
+	
+	if (closure)
+		num = self->ftset.num_tracked_features;
+	else
+		num = self->ftset.nfeatures;
+		
+	result = PyTuple_New(num);
     if (result)
     {
-        unsigned int i;
+        unsigned int i, k;
 
-        for (i=0; i < self->ftset.nfeatures; i++)
-            PyTuple_SET_ITEM(result, i,
+        for (i=k=0; i < self->ftset.nfeatures; i++)
+        {
+			if (closure && (self->ftset.features[i].status != KLT_TRACKED)) continue;
+
+            PyTuple_SET_ITEM(result, k++,
                              Py_BuildValue("ff",
                                            self->ftset.features[i].position.x,
                                            self->ftset.features[i].position.y));
+		}
     }
 
     return result;
@@ -447,24 +459,29 @@ ftset_get_estimations(PyFeatureSet *self, void *closure)
 {
     PyObject *result;
 
-    result = PyTuple_New(self->ftset.nfeatures);
+    result = PyTuple_New(self->ftset.num_tracked_features);
     if (result)
     {
-        unsigned int i;
+        unsigned int i,k;
 
-        for (i=0; i < self->ftset.nfeatures; i++)
-            PyTuple_SET_ITEM(result, i,
+        for (i=k=0; i < self->ftset.nfeatures; i++)
+        {
+            if (self->ftset.features[i].status != KLT_TRACKED) continue;
+
+            PyTuple_SET_ITEM(result, k++,
                              Py_BuildValue("ff",
                                            self->ftset.features[i].estimation.x,
                                            self->ftset.features[i].estimation.y));
+        }
     }
 
     return result;
 }
 
 static PyGetSetDef ftset_getseters[] = {
-    {"positions", (getter)ftset_get_positions, (setter)ftset_set_positions, "Features positions tuple.", (void *)0},
-    {"estimations", (getter)ftset_get_estimations, NULL, "Features estimations tuple.", (void *)0},
+    {"trackers", (getter)ftset_get_positions, (setter)ftset_set_positions, "Tuple of all features positions.", (void *)0},
+    {"tracked", (getter)ftset_get_positions, NULL, "Tuple of positions of only tracked features.", (void *)1},
+    {"estimations", (getter)ftset_get_estimations, NULL, "Tuple of estimation of only tracked features.", (void *)0},
     {NULL} /* sentinel */
 };
 
