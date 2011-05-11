@@ -9,7 +9,7 @@ outliers_prob = 0.5
 files = sorted(glob(argv[1]))
 
 im1 = load_image(files[0])
-corners = detect_corners(im1.grayscale, 0.3, 500)
+corners = detect_corners(im1.grayscale, 0.2)
 
 cx = im1.width/2
 cy = im1.height/2
@@ -75,6 +75,7 @@ def computeAffineMatrix(idx, P, E):
         Pi = pyi*px0 - pxi*py0
         Dx0i = px0 - pxi
         den = Dx0i*P1 - Dx01*Pi
+        if not den: continue
         
         ty = ((eyi*px0 - pxi*ey0)*P1 - E2*Pi) / den
         tx = ((exi*px0 - pxi*ex0)*P1 - E1*Pi) / den
@@ -110,8 +111,8 @@ with open(argv[2], 'w') as fp:
 
         ctx.track(im1, im2, ftset)
 
-        P = [(x-cx, y-cy) for x,y in ftset.tracked]
-        E = [(x-cx, y-cy) for x,y in ftset.estimations]
+        P = [ (x-cx, y-cx) for x,y in ftset.tracked ]
+        E = [ (x-cx, y-cx) for x,y in ftset.estimations ]
         max_local = max(3, int(len(P) * (1-outliers_prob)))
 
         print("Frame %u: remains %u tracker(s), max inliers: %u" % (i, len(ftset.tracked), max_local))
@@ -140,7 +141,7 @@ with open(argv[2], 'w') as fp:
             
             if loc_err > frame_err:
                 #print("Frame %u: err inc (frame err=%g)" % (i, frame_err))
-                print("Frame %u: Err=%le, a=%g, b=%g, c=%g, d=%g, tx=%g, ty=%g" % ((i,frame_err)+frame_mat))
+                print("Frame %u: Err=%le (inc), a=%g, b=%g, c=%g, d=%g, tx=%g, ty=%g" % ((i,frame_err)+frame_mat))
                 fp.write("%le %le %le %le %le %le %u\n" % (frame_mat+(i,)))
                 break
                 
@@ -170,7 +171,7 @@ with open(argv[2], 'w') as fp:
             if len(inliers) < max_local:
                 if frame_err > 1.0:
                     retry += 1
-                    if retry <= 200:
+                    if retry <= len(P):
                         frame_mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                         frame_err = 1e+52
                         inliers, outliers = getSamples(P, max_local)

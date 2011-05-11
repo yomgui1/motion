@@ -4,7 +4,7 @@ CC = gcc
 AR = ar
 
 CFLAGS = $(OPTS)
-CPPFLAGS = 2>&1 -g -Wall $(WARNS) -O2 $(OPTS) $(INCLUDES) $(DEFINES)
+CPPFLAGS = 2>&1 -g -Wall $(WARNS) -O3 $(OPTS) $(INCLUDES) $(DEFINES)
 ARFLAGS = cru
 
 INCLUDES = -I. -Idetectors -Imatchers
