@@ -412,7 +412,7 @@ int KLT_TrackFeatures(
 {
 	int i, level, max_level;
 	unsigned int sampling;
-	
+
 	ctx->win_width = 2*ctx->win_halfwidth + 1;
 	ctx->win_height = 2*ctx->win_halfheight + 1;
 	

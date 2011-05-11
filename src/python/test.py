@@ -1,6 +1,10 @@
 from motion import *
 from sys import argv
 from glob import glob
+from random import sample
+import sys
+
+outliers_prob = 0.5
 
 files = sorted(glob(argv[1]))
 
@@ -18,68 +22,19 @@ print("%u tracker(s) found." % len(ftset.trackers))
 
 ctx = KLTContext()
 
-def gauss3x4(mat):
-    # Pivot #1
-    p = mat[0][0]
-    if p == 0.0: return
-    if p != 1.0:
-        mat[0][1] /= p 
-        mat[0][2] /= p
-        mat[0][3] /= p
-    p = mat[1][0]
-    if p != 0.0:
-        mat[1][1] -= p*mat[0][1]
-        mat[1][2] -= p*mat[0][2]
-        mat[1][3] -= p*mat[0][3]
-    p = mat[2][0]
-    if p != 0.0:
-        mat[2][1] -= p*mat[0][1]
-        mat[2][2] -= p*mat[0][2]
-        mat[2][3] -= p*mat[0][3]
-        
-    # Pivot #2
-    p = mat[1][1]
-    if p == 0.0: return
-    if p != 1.0:
-        mat[1][2] /= p
-        mat[1][3] /= p
-    p = mat[0][1]
-    if p != 0.0:
-        mat[0][2] -= p*mat[1][2]
-        mat[0][3] -= p*mat[1][3]
-    p = mat[2][1]
-    if p != 0.0:
-        mat[2][2] -= p*mat[1][2]
-        mat[2][3] -= p*mat[1][3]
-        
-    # Pivot #3
-    p = mat[2][2]
-    if p == 0.0: return
-    if p != 1.0:
-        mat[2][3] /= p
-    p = mat[0][2]
-    if p != 0.0:
-        mat[0][3] -= p*mat[2][3]
-    p = mat[1][2]
-    if p != 0.0:
-        mat[1][3] -= p*mat[2][3]
-        
-    return mat
-
-from math import acos, asin, atan, degrees
-from random import sample
-
-max_local = 25
-
 def getSamples(P, n):
     r = range(len(P))
     inliers = list(sample(r, n))
     return inliers, [ j for j in r if j not in inliers ]
         
-def computeMatrix(j, P, E):
+def computeAffineMatrix(idx, P, E):
     """See notes below.
     """
-    
+
+    P = [P[j] for j in idx]
+    E = [E[j] for j in idx]
+
+    # Use first 3-points to compute basic matrix coeffiscients
     px0 = P[0][0]
     px1 = P[1][0]
     px2 = P[2][0]
@@ -92,29 +47,61 @@ def computeMatrix(j, P, E):
     ey0 = E[0][1]
     ey1 = E[1][1]
     ey2 = E[2][1]
+    
     P1 = py1*px0 - px1*py0
     P2 = py2*px0 - px2*py0
     E1 = ex1*px0 - px1*ex0
     E2 = ey1*px0 - px1*ey0
     Dx02 = px0-px2
     Dx01 = px0-px1
-    ty = ((ey2*px0-px2*ey0)*P1 - E2*P2) / (Dx02*P1 - Dx01*P2)
-    tx = ((ex2*px0-px2*ex0)*P1 - E1*P2) / (Dx02*P1 - Dx01*P2)
+    den = Dx02*P1 - Dx01*P2
+    
+    ty = ((ey2*px0 - px2*ey0)*P1 - E2*P2) / den
+    tx = ((ex2*px0 - px2*ex0)*P1 - E1*P2) / den
     d = (E2 - ty*Dx01) / P1
-    c = (ey0 - d*py0 - ty)  / px0
+    c = (ey0 - d*py0 - ty) / px0
     b = (E1 - tx*Dx01) / P1
-    a = (ex0 - b*py0 - tx)  / px0
-    return [a,b,c,d,tx,ty]
+    a = (ex0 - b*py0 - tx) / px0
+    
+    mat = [a,b,c,d,tx,ty]
+
+    # Then compute and sum matrix coef. for remaining points
+    for p, e in zip(P[3:], E[3:]):
+        pxi = p[0]
+        pyi = p[1]
+        exi = e[0]
+        eyi = e[1]
         
-def errorForIdx(j, P, E, mat):
-    ex = (mat[0]*P[j][0] - mat[1]*P[j][1] + mat[4]) - E[j][0]
-    ey = (mat[2]*P[j][0] + mat[3]*P[j][1] + mat[5]) - E[j][1]
+        Pi = pyi*px0 - pxi*py0
+        Dx0i = px0 - pxi
+        den = Dx0i*P1 - Dx01*Pi
+        
+        ty = ((eyi*px0 - pxi*ey0)*P1 - E2*Pi) / den
+        tx = ((exi*px0 - pxi*ex0)*P1 - E1*Pi) / den
+        d = (E2 - ty*Dx01) / P1
+        c = (ey0 - d*py0 - ty) / px0
+        b = (E1 - tx*Dx01) / P1
+        a = (ex0 - b*py0 - tx) / px0
+
+        mat[0] += a
+        mat[1] += b
+        mat[2] += c
+        mat[3] += d
+        mat[4] += tx
+        mat[5] += ty
+        
+    n = len(idx)
+    return tuple(v/n for v in mat)
+        
+def pointError(p, e, mat):
+    ex = (mat[0]*p[0] - mat[1]*p[1] + mat[4]) - e[0]
+    ey = (mat[2]*p[0] + mat[3]*p[1] + mat[5]) - e[1]
     return ex*ex + ey*ey
     
 def computeError(idx, P, E, mat):
         err = 0.0
         for j in idx:
-            err += errorForIdx(j, P, E, mat)
+            err += pointError(P[j], E[j], mat)
         return err/len(idx)
 
 with open(argv[2], 'w') as fp:
@@ -122,40 +109,40 @@ with open(argv[2], 'w') as fp:
         im2 = load_image(files[i])
 
         ctx.track(im1, im2, ftset)
-        print("Frame %u: remains %u tracker(s)" % (i, len(ftset.tracked)))
-        
+
         P = [(x-cx, y-cy) for x,y in ftset.tracked]
         E = [(x-cx, y-cy) for x,y in ftset.estimations]
+        max_local = max(3, int(len(P) * (1-outliers_prob)))
+
+        print("Frame %u: remains %u tracker(s), max inliers: %u" % (i, len(ftset.tracked), max_local))
         
         # Start using a good samples
-        inliers, outliers = getSamples(P, max_local)
+        if len(P) > 3:
+            inliers, outliers = getSamples(P, max_local)
+        else:
+            inliers = [0,1,2]
+            outliers = []
         
         allindx = range(len(P))
         frame_mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         frame_err = 1e+52
+        retry = 0
         
         while 1:
             mat = [0.0]*6
 
             # Compute frame matrix with inliners
-            for j in inliers[:-3]:
-                for k, v in enumerate(computeMatrix(j, P[j:j+3], E[j:j+3])):
-                    mat[k] += v
-            mat = [ v/len(inliers) for v in mat ]
-            print("Frame %u: " % i, mat)
+            mat = computeAffineMatrix(inliers, P, E)
             
             # Compute the average error on this matrix for inliers
             loc_err = computeError(inliers, P, E, mat)
-            print("Frame %u: Err=%g (%u inliers)" % (i, loc_err, len(inliers)))
+            #print("Frame %u: Err=%le (%u inliers)" % (i, loc_err, len(inliers)))
             
             if loc_err > frame_err:
-                print("Frame %u: err inc (frame err=%g)" % (i, frame_err))
-                for j in tuple(inliers):
-                    err = errorForIdx(j, P, E, mat)
-                    if err > frame_err:
-                        inliers.remove(j)
-                        outliers.append(j)
-                continue
+                #print("Frame %u: err inc (frame err=%g)" % (i, frame_err))
+                print("Frame %u: Err=%le, a=%g, b=%g, c=%g, d=%g, tx=%g, ty=%g" % ((i,frame_err)+frame_mat))
+                fp.write("%le %le %le %le %le %le %u\n" % (frame_mat+(i,)))
+                break
                 
             frame_err = loc_err
             frame_mat = mat
@@ -163,31 +150,39 @@ with open(argv[2], 'w') as fp:
             
             # Remove all inliers with bigger error than this average
             for j in tuple(inliers):
-                err = errorForIdx(j, P, E, frame_mat)
+                err = pointError(P[j], E[j], frame_mat)
                 if err > frame_err:
                     inliers.remove(j)
                     outliers.append(j)
                     
             frame_err = computeError(inliers, P, E, frame_mat)
-            print("Frame %u: refined Err=%g (%u inliers, %u outliers)" % (i, frame_err, len(inliers), len(outliers)))
+            #print("Frame %u: refined Err=%g (%u inliers, %u outliers)" % (i, frame_err, len(inliers), len(outliers)))
             
             # Tests all outliers to find new inliers
             for j in tuple(outliers):
                 if len(inliers) == max_local: break
-                err = errorForIdx(j, P, E, frame_mat)
+                err = pointError(P[j], E[j], frame_mat)
                 if err <= frame_err:
                     outliers.remove(j)
                     inliers.append(j)
-                    
+
+            # Not enough inliers?
             if len(inliers) < max_local:
-                for j in outliers:
-                    print(frame_err, errorForIdx(j, P, E, frame_mat))
-                break
-                    
-            # New inliers ?
-            if 0:
-                print("Frame #%u: Tx=%g, Ty=%g, LocErr(%u)=%g GlobErr=%g" % (i, angle, GTx, GTy, oN, oErr, Err))
-                fp.write("%le %le %le %le %u\n" % (GAc, GCc, GTx, GTy, i))
+                if frame_err > 1.0:
+                    retry += 1
+                    if retry <= 200:
+                        frame_mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                        frame_err = 1e+52
+                        inliers, outliers = getSamples(P, max_local)
+                        sys.stdout.write("  retry %u\r" % retry)
+                        continue
+                    else:
+                        print("Frame %u: too much error, use identity motion matrix!" % i)
+                        fp.write("1.0 0.0 0.0 1.0 0.0 0.0 %u\n" % i)
+                        break
+                
+                print("Frame %u: Err=%le, a=%g, b=%g, c=%g, d=%g, tx=%g, ty=%g" % ((i,frame_err)+frame_mat))
+                fp.write("%le %le %le %le %le %le %u\n" % (frame_mat+(i,)))
                 break
 
         ftset.trackers = ftset.estimations
@@ -234,12 +229,12 @@ and n >= 3
 
 This is give the augmented matrix:
 
-[ px(0)   py(0)     0      0     1 0 | ex(0) ] | a|
-[   0       0     px(0)   py(0)  0 1 | ey(0) ] | b|
-[ px(1)   py(1)     0      0     1 0 | ex(1) ] | c|
-[   0       0     px(1)   py(1)  0 1 | ey(1) ] | d|
-[ px(2)   py(2)     0      0     1 0 | ex(2) ] |tx|
-[   0       0     px(2)   py(2)  0 1 | ey(2) ] |ty|
+[ px(0)   py(0)     0      0     1 0 | ex(0) ]
+[   0       0     px(0)   py(0)  0 1 | ey(0) ]
+[ px(1)   py(1)     0      0     1 0 | ex(1) ]
+[   0       0     px(1)   py(1)  0 1 | ey(1) ]
+[ px(2)   py(2)     0      0     1 0 | ex(2) ]
+[   0       0     px(2)   py(2)  0 1 | ey(2) ]
 
 [ px0     py0       0       0  1 0 | ex0 ]
 [   0       0     px0     py0  0 1 | ey0 ]
@@ -321,6 +316,8 @@ This is give the augmented matrix:
 [ 0        0    0        0                            1                            0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
 [ 0        0    0        0                            0                            1 | ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
 
+
+
 ty = ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))
 tx = ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))
 d = ((ey1.px0-px1.ey0) - ty.(px0-px1))/(py1.px0-px1.py0)
@@ -337,7 +334,73 @@ Dx01 = px0-px1
 ty = ((ey2.px0-px2.ey0).P1 - E2.P2) / (Dx02.P1 - Dx01.P2)
 tx = ((ex2.px0-px2.ex0).P1 - E1.P2) / (Dx02.P1 - Dx01.P2)
 d = (E2 - ty.Dx01) / P1
-c = (ey0 - d.py0 - ty)  / px0
+c = (ey0 - d.py0 - ty) / px0
 b = (E1 - tx.Dx01) / P1
-a = (ex0 - b.py0 - tx)  / px0
+a = (ex0 - b.py0 - tx) / px0
+
+=== Generalisation to more points ===
+
+if we add more 2D points to the last matrix:
+
+[ px(n-1) py(n-1)        0        0  1 0 | ex(n-1) ]
+[       0       0  px(n-1)  py(n-1)  0 1 | ey(n-1) ]
+
+These lines are solved using combination of the upper ones by doing substraction to obtain zeros:
+
+[       1  py0/px0        0        0  1/px0 0 | ex0/px0 ] (line 1)
+...
+[ px(n-1)  py(n-1)        0        0      1 0 | ex(n-1) ]
+[       0        0  px(n-1)  py(n-1)      0 1 | ey(n-1) ]
+
+[ 0                              1        0        0  (px0-px1)/(py1.px0-px1.py0) 0 | (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ] (line2)
+...
+[ 0  (py(n-1).px0-px(n-1).py0)/px0        0        0            (px0-px(n-1))/px0 0 |      (ex(n-1).px0-px(n-1).ex0)/px0 ]
+[ 0                              0  px(n-1)  py(n-1)                            0 1 |                            ey(n-1) ]
+
+[ 0  0  1                        py0/px0                                                                                              0              1/px0 |                                                                                                           ey0/px0 ] (line3)
+...
+[ 0  0  0                              0  ((px0-px(n-1)).(py1.px0-px1.py0)-(py(n-1).px0-px(n-1).py0).(px0-px1))/(px0.(py1.px0-px1.py0))                  0 | ((ex(n-1).px0-px(n-1).ex0).(py1.px0-px1.py0)-(py(n-1).px0-px(n-1).py0).(ex1.px0-px1.ex0))/(px0.(py1.px0-px1.py0)) ]
+[ 0  0  0  (py(n-1).px0-px(n-1).py0)/px0                                                                                              0  (px0-px(n-1))/px0 |                                                                                     (ey(n-1).px0-px(n-1).ey0)/px0 ]
+
+
+[ 0  0  0  1                                                                                              0                                                                    (px0-px1)/(py1.px0-px1.py0) |                                                                               (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ] (line4)
+...
+[ 0  0  0  0  ((px0-px(n-1)).(py1.px0-px1.py0)-(py(n-1).px0-px(n-1).py0).(px0-px1))/(px0.(py1.px0-px1.py0))                                                                                              0 | ((ex(n-1).px0-px(n-1).ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py(n-1).px0-px(n-1).py0))/(px0.(py1.px0-px1.py0)) ]
+[ 0  0  0  0                                                                                              0  ((px0-px(n-1)).(py1.px0-px1.py0)-(px0-px1).(py(n-1).px0-px(n-1).py0))/(px0.(py1.px0-px1.py0)) | ((ey(n-1).px0-px(n-1).ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py(n-1).px0-px(n-1).py0))/(px0.(py1.px0-px1.py0)) ]
+
+[ 0  0  0  0                                                           1                                                           0 |                                                                   tx ] (line5)
+...
+[ 0  0  0  0  ((px0-px(n-1)).P1-(py(n-1).px0-px(n-1).py0).Dx01)/(px0.P1)                                                           0 | ((ex(n-1).px0-px(n-1).ex0).P1-E1.(py(n-1).px0-px(n-1).py0))/(px0.P1) ]
+[ 0  0  0  0                                                           0  ((px0-px(n-1)).P1-Dx01.(py(n-1).px0-px(n-1).py0))/(px0.P1) | ((ey(n-1).px0-px(n-1).ey0).P1-E1.(py(n-1).px0-px(n-1).py0))/(px0.P1) ]
+
+[ 0  0  0  0  1  0 |                                                                   tx ] (line5)
+[ 0  0  0  0  0  1 |                                                                   ty ] (line6)
+...
+[ 0  0  0  0  0  0 | (((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 - (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) ]
+[ 0  0  0  0  0  0 | (((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 - (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) ]
+
+This gives following equations:
+
+(((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 - (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) = 0
+(((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 - (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) = 0
+
+((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 - (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0) = 0
+((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 - (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0) = 0
+
+((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 = (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0)
+((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 = (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0)
+
+(ex(n-1).px0 - px(n-1).ex0).P1 - tx.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - tx.Dx01.(py(n-1).px0 - px(n-1).py0)
+(ey(n-1).px0 - px(n-1).ey0).P1 - ty.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - ty.Dx01.(py(n-1).px0 - px(n-1).py0)
+
+tx.Dx01.(py(n-1).px0 - px(n-1).py0) - tx.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ex(n-1).px0 - px(n-1).ex0)
+ty.Dx01.(py(n-1).px0 - px(n-1).py0) - ty.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ey(n-1).px0 - px(n-1).ey0)
+
+tx.(Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1))) = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ex(n-1).px0 - px(n-1).ex0)
+ty.(Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1))) = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ey(n-1).px0 - px(n-1).ey0)
+
+tx = (E1.(py(n-1).px0 - px(n-1).py0) - P1.(ex(n-1).px0 - px(n-1).ex0)) / (Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1)))
+ty = (E1.(py(n-1).px0 - px(n-1).py0) - P1.(ey(n-1).px0 - px(n-1).ey0)) / (Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1)))
+
+well... then a,b,c and d can be found using upper equations and this both results.
 """

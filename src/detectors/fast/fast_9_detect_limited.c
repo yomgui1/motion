@@ -79,6 +79,7 @@ xy* fast9_detect_limited(const byte* im,
             final_corners = malloc(sizeof(xy) * num_corners);
             if (final_corners)
             {
+                *ret_num_corners = num_corners;
                 for (i=0; i < num_corners; i++)
                 {
                     final_corners[i].x = corners[corners_mapping[i].index].x;

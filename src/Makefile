@@ -97,7 +97,8 @@ all : libmotion.a
 tests: \
 	math/tests \
 	imtool/tests \
-	matchers/klt/tests
+	matchers/klt/tests \
+	detectors/fast/tests
 
 clean:
 	-rm -f libmotion.a $(ALL_OBJS)

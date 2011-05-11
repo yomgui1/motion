@@ -46,8 +46,9 @@ static u_quad_t ppc_getcounter(void)
 
 int main(int argc, char **argv)
 {
-    int rc = 1, err, threshold;
-    IMT_Image *image=NULL, *gray=NULL;
+    int rc = 1, err;
+    double threshold;
+    IMT_Image *image=NULL;
 
     if (argc < 3)
     {
@@ -55,10 +56,10 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    threshold = strtoul(argv[2], NULL, 10);
-    if ((threshold <= 0) || (threshold > 255))
+    threshold = strtod(argv[2], NULL);
+    if ((threshold <= 0.0) || (threshold > 1.0))
     {
-        fprintf(stderr, "Bad parameter: threshold (%u), must be in [1, 255]\n", threshold);
+        fprintf(stderr, "Bad parameter: threshold (%g), must be in ]0.0, 1.0]\n", threshold);
         return -1;
     }
 
@@ -67,110 +68,121 @@ int main(int argc, char **argv)
     err = IMT_Load(argv[1], &image, NULL);
     if (NULL != image)
     {
-        err = IMT_Grayscale(image, &gray);
+        err = IMT_GenerateGrayscale(image, 0);
         if (!err)
         {
-            int num_corners, num_nonmax_corners;
-            xy *corners, *nonmax_corners;
-			u_quad_t t0, t1;
-		
-            printf("Trying simple fast9 detection... ");
-            num_corners = -1;
-            READ_TIMESTAMP(t0);
-            corners = fast9_detect(gray->data, gray->width, gray->height, gray->stride, threshold, &num_corners);
-            READ_TIMESTAMP(t1);
-            t1 -= t0;
-
-            if (NULL == corners)
-                printf("[FAILED] (NULL result)\n");
-            else if (num_corners < 0)
-                printf("[FAILED] (num_corners not set)\n");
-            else if (num_corners == 0)
-                printf("[WARNING] (no corners found)\n");
-            else
-                printf("[OK] (%u corners in %llu ticks)\n", num_corners, t1);
+            IMT_Image *gray;
             
-            printf("Trying fast9 detection + nonmax removal... ");
-            num_nonmax_corners = -1;
-            nonmax_corners = fast9_detect_nonmax(gray->data, gray->width, gray->height, gray->stride, threshold, &num_nonmax_corners);
-
-            if (NULL == nonmax_corners)
-                printf("[FAILED] (NULL result)\n");
-            else if (num_nonmax_corners < 0)
-                printf("[FAILED] (num_corners not set)\n");
-            else if (num_nonmax_corners == 0)
-                printf("[WARNING] (no corners found)\n");
-            else
-                printf("[OK] (%u corners)\n", num_nonmax_corners);
-
-            if (num_corners >= 2)
+            err = IMT_AllocImageFromFloat(&gray, IMT_PIXFMT_GRAY8,
+                                          image->width,
+                                          image->height,
+                                          image->grayscale->array.data.float_ptr);
+            if (!err)
             {
-                int num_limited_corners =  num_nonmax_corners / 2;
-                xy* limited_corners;
+                int num_corners, num_nonmax_corners;
+                xy *corners, *nonmax_corners;
+                u_quad_t t0, t1;
 
-                printf("Trying fast9 limited (%u features only) simple detection ... ", num_limited_corners);
-                limited_corners = fast9_detect_limited(gray->data, gray->width, gray->height, gray->stride, threshold, &num_limited_corners, 1);
+                printf("Trying simple fast9 detection... ");
+                num_corners = -1;
+                READ_TIMESTAMP(t0);
+                corners = fast9_detect(gray->data, gray->width, gray->height, gray->stride, threshold, &num_corners);
+                READ_TIMESTAMP(t1);
+                t1 -= t0;
 
-                if (NULL == limited_corners)
+                if (NULL == corners)
                     printf("[FAILED] (NULL result)\n");
-                else if (num_limited_corners == 0)
+                else if (num_corners < 0)
+                    printf("[FAILED] (num_corners not set)\n");
+                else if (num_corners == 0)
                     printf("[WARNING] (no corners found)\n");
-                else if (num_limited_corners > num_nonmax_corners / 2)
-                    printf("[FAILED] (corners number incorrect: waited %d, get %d)\n", num_nonmax_corners / 2, num_limited_corners);
                 else
+                    printf("[OK] (%u corners in %llu ticks)\n", num_corners, t1);
+            
+                printf("Trying fast9 detection + nonmax removal... ");
+                num_nonmax_corners = -1;
+                nonmax_corners = fast9_detect_nonmax(gray->data, gray->width, gray->height, gray->stride, threshold, &num_nonmax_corners);
+
+                if (NULL == nonmax_corners)
+                    printf("[FAILED] (NULL result)\n");
+                else if (num_nonmax_corners < 0)
+                    printf("[FAILED] (num_corners not set)\n");
+                else if (num_nonmax_corners == 0)
+                    printf("[WARNING] (no corners found)\n");
+                else
+                    printf("[OK] (%u corners)\n", num_nonmax_corners);
+
+                if (num_corners >= 2)
                 {
-                    int i, j, unknowns=0;
+                    int num_limited_corners = 500;
+                    xy* limited_corners;
 
-                    /* checking if the limited corners set is inside the complet set */
-                    for (i=0; i < num_limited_corners; i++)
-                    {
-						int found = 0;
-                        xy *corner = &limited_corners[i];
+                    printf("Trying fast9 limited (%u features only) simple detection ... ", num_limited_corners);
+                    limited_corners = fast9_detect_limited(gray->data, gray->width, gray->height, gray->stride, threshold, &num_limited_corners, 1);
 
-                        for (j=0; j < num_corners; j++)
-                        {
-                            if ((corners[j].x == corner->x) && (corners[j].y == corner->y))
-                            {
-								found = 1;
-								break;
-							}
-                        }
-                        
-						if (!found)
-							unknowns++;
-                    }
-
-                    if (unknowns > 0)
-                    {
-                        printf("[WARNING] (%u corners found but got %u corners not inside the full set)\n", num_limited_corners, unknowns);
-                    }
+                    if (NULL == limited_corners)
+                        printf("[FAILED] (NULL result)\n");
+                    else if (num_limited_corners == 0)
+                        printf("[WARNING] (no corners found)\n");
+                    else if (num_limited_corners > num_nonmax_corners)
+                        printf("[FAILED] (corners number incorrect: waited %d, get %d)\n", num_nonmax_corners, num_limited_corners);
                     else
-                        printf("[OK] (%u corners)\n", num_limited_corners);
+                    {
+                        int i, j, unknowns=0;
+
+                        /* checking if the limited corners set is inside the complet set */
+                        for (i=0; i < num_limited_corners; i++)
+                        {
+                            int found = 0;
+                            xy *corner = &limited_corners[i];
+
+                            for (j=0; j < num_corners; j++)
+                            {
+                                if ((corners[j].x == corner->x) && (corners[j].y == corner->y))
+                                {
+                                    found = 1;
+                                    break;
+                                }
+                            }
+                        
+                            if (!found)
+                                unknowns++;
+                        }
+
+                        if (unknowns > 0)
+                        {
+                            printf("[WARNING] (%u corners found but got %u corners not inside the full set)\n", num_limited_corners, unknowns);
+                        }
+                        else
+                            printf("[OK] (%u corners)\n", num_limited_corners);
+                    }
+
+                    free(limited_corners);
                 }
 
-                free(limited_corners);
-            }
-
-			if (argc >= 4)
-			{
-				int i;
-				FILE *outfile;
+                if (argc >= 4)
+                {
+                    int i;
+                    FILE *outfile;
 				
-                printf("Saving non-max points under '%s'\n", argv[3]);
-				outfile = fopen(argv[3], "w");
-				fprintf(outfile, "%u %u %u\n", gray->width, gray->height, num_nonmax_corners);
-				for (i=0; i < num_nonmax_corners; i++)
-					fprintf(outfile, "%u %u\n", nonmax_corners[i].x, nonmax_corners[i].y);
-				fclose(outfile);
-			}
+                    printf("Saving non-max points under '%s'\n", argv[3]);
+                    outfile = fopen(argv[3], "w");
+                    fprintf(outfile, "%u %u %u\n", gray->width, gray->height, num_nonmax_corners);
+                    for (i=0; i < num_nonmax_corners; i++)
+                        fprintf(outfile, "%u %u\n", nonmax_corners[i].x, nonmax_corners[i].y);
+                    fclose(outfile);
+                }
 
-            free(nonmax_corners);
-            free(corners);
+                free(nonmax_corners);
+                free(corners);
             
-            IMT_FreeImage(gray);
+                IMT_FreeImage(gray);
+            }
+            else
+                fprintf(stderr, "Converting grayscale floating matrix into image failed: %s\n", IMT_GetErrorString(err));
         }
         else
-            fprintf(stderr, "Converting input image to greyscale failed: %s\n", IMT_GetErrorString(err));
+            fprintf(stderr, "Converting input image to grayscale failed: %s\n", IMT_GetErrorString(err));
 		
         IMT_FreeImage(image);
     }
