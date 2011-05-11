@@ -69,7 +69,53 @@ def gauss3x4(mat):
 from math import acos, asin, atan, degrees
 from random import sample
 
-max_local = 10
+max_local = 25
+
+def getSamples(P, n):
+    r = range(len(P))
+    inliers = list(sample(r, n))
+    return inliers, [ j for j in r if j not in inliers ]
+        
+def computeMatrix(j, P, E):
+    """See notes below.
+    """
+    
+    px0 = P[0][0]
+    px1 = P[1][0]
+    px2 = P[2][0]
+    py0 = P[0][1]
+    py1 = P[1][1]
+    py2 = P[2][1]
+    ex0 = E[0][0]
+    ex1 = E[1][0]
+    ex2 = E[2][0]
+    ey0 = E[0][1]
+    ey1 = E[1][1]
+    ey2 = E[2][1]
+    P1 = py1*px0 - px1*py0
+    P2 = py2*px0 - px2*py0
+    E1 = ex1*px0 - px1*ex0
+    E2 = ey1*px0 - px1*ey0
+    Dx02 = px0-px2
+    Dx01 = px0-px1
+    ty = ((ey2*px0-px2*ey0)*P1 - E2*P2) / (Dx02*P1 - Dx01*P2)
+    tx = ((ex2*px0-px2*ex0)*P1 - E1*P2) / (Dx02*P1 - Dx01*P2)
+    d = (E2 - ty*Dx01) / P1
+    c = (ey0 - d*py0 - ty)  / px0
+    b = (E1 - tx*Dx01) / P1
+    a = (ex0 - b*py0 - tx)  / px0
+    return [a,b,c,d,tx,ty]
+        
+def errorForIdx(j, P, E, mat):
+    ex = (mat[0]*P[j][0] - mat[1]*P[j][1] + mat[4]) - E[j][0]
+    ey = (mat[2]*P[j][0] + mat[3]*P[j][1] + mat[5]) - E[j][1]
+    return ex*ex + ey*ey
+    
+def computeError(idx, P, E, mat):
+        err = 0.0
+        for j in idx:
+            err += errorForIdx(j, P, E, mat)
+        return err/len(idx)
 
 with open(argv[2], 'w') as fp:
     for i in range(1, len(files)):
@@ -80,155 +126,70 @@ with open(argv[2], 'w') as fp:
         
         P = [(x-cx, y-cy) for x,y in ftset.tracked]
         E = [(x-cx, y-cy) for x,y in ftset.estimations]
-
-        """
-        dx = []
-        dy = []
-        for p, e in zip(P, E):
-            dx.append(e[0]-p[0])
-            dy.append(e[1]-p[1])
-        dx=sum(dx)/len(dx)
-        dy=sum(dy)/len(dy)
-        print("Frame %u: %g,%g" % (i,dx,dy))
-        """
         
-        r = range(len(P)-3)
-        inliners = list(sample(r, max_local))
-        outliners = [j for j in r if j not in inliners]
-        del r
-
-        GAc = 0.0
-        GCc = 0.0
-        GTx = 0.0
-        GTy = 0.0
-        oErr = 1e+52
-        bad_ge = 0
-        ge_err = 0.01
+        # Start using a good samples
+        inliers, outliers = getSamples(P, max_local)
+        
+        allindx = range(len(P))
+        frame_mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        frame_err = 1e+52
         
         while 1:
-            Ac = []
-            Cc = []
-            Tx = []
-            Ty = []
+            mat = [0.0]*6
 
-            # values for inliners
-            for j in inliners:
-                mat = []
-                for k in (0, 1, 2):
-                    B = P[j+k][1]
-                    C = P[j+k][0]
-                    A = C*C + B*B
-                    D = E[j+k][1]*C - E[j+k][0]*B
-                    mat.append([ A, B, C, D ])
+            # Compute frame matrix with inliners
+            for j in inliers[:-3]:
+                for k, v in enumerate(computeMatrix(j, P[j:j+3], E[j:j+3])):
+                    mat[k] += v
+            mat = [ v/len(inliers) for v in mat ]
+            print("Frame %u: " % i, mat)
+            
+            # Compute the average error on this matrix for inliers
+            loc_err = computeError(inliers, P, E, mat)
+            print("Frame %u: Err=%g (%u inliers)" % (i, loc_err, len(inliers)))
+            
+            if loc_err > frame_err:
+                print("Frame %u: err inc (frame err=%g)" % (i, frame_err))
+                for j in tuple(inliers):
+                    err = errorForIdx(j, P, E, mat)
+                    if err > frame_err:
+                        inliers.remove(j)
+                        outliers.append(j)
+                continue
                 
-                if gauss3x4(mat) is not None:
-                    c = mat[0][3]
-                    tx = -mat[1][3]
-                    ty = mat[2][3]
-
-                    a = (E[j][0] + c*P[j][1] - tx) / P[j][0]
-
-                    Ac.append(a)
-                    Cc.append(c)
-                    Tx.append(tx)
-                    Ty.append(ty)
-
-            del A,B,C,D,a,c
-
-            n = len(Ac)
-            Ac=sum(Ac)/n
-            Cc=sum(Cc)/n
-            Tx=sum(Tx)/n
-            Ty=sum(Ty)/n
-
-            Err=[]
-            for j in inliners:
-                ex = (Ac*P[j][0] - Cc*P[j][1] + Tx) - E[j][0]
-                ey = (Cc*P[j][0] + Ac*P[j][1] + Ty) - E[j][1]
-                err = ex*ex + ey*ey
-                Err.append(err)
-            N = len(Err)
-            Err=sum(Err)/N
-
-            # Local error increase and don't change?
-            if Err >= oErr:
-                # compute global error
-                Err=[]
-                for j in inliners:
-                    ex = (Ac*P[j][0] - Cc*P[j][1] + Tx) - E[j][0]
-                    ey = (Cc*P[j][0] + Ac*P[j][1] + Ty) - E[j][1]
-                    err = ex*ex + ey*ey
-                    Err.append(err)
-                Err=sum(Err)/len(Err)
-
-                # Keep global error low also (but accept more error)
-                if Err > ge_err:
-                    #print("GErr too high:", Err)
-                    bad_ge += 1
-
-                    # need to accept a bigger global error for this frame?
-                    if bad_ge > 3:
-                        ge_err *= 2
-                        bad_ge = 0
-                        
-                    r = range(len(P)-3)
-                    inliners = list(sample(r, max_local))
-                    outliners = [j for j in r if j not in inliners]
-                    del r
-
-                    GAc = 0.0
-                    GCc = 0.0
-                    GTx = 0.0
-                    GTy = 0.0
-                    oErr = 1e+52
-                    continue
-
-                angle = degrees(atan(GCc/GAc))
-                print("Frame #%u: angle=%g, Tx=%g, Ty=%g, LocErr(%u)=%g GlobErr=%g" % (i, angle, GTx, GTy, oN, oErr, Err))
+            frame_err = loc_err
+            frame_mat = mat
+            del mat, loc_err
+            
+            # Remove all inliers with bigger error than this average
+            for j in tuple(inliers):
+                err = errorForIdx(j, P, E, frame_mat)
+                if err > frame_err:
+                    inliers.remove(j)
+                    outliers.append(j)
+                    
+            frame_err = computeError(inliers, P, E, frame_mat)
+            print("Frame %u: refined Err=%g (%u inliers, %u outliers)" % (i, frame_err, len(inliers), len(outliers)))
+            
+            # Tests all outliers to find new inliers
+            for j in tuple(outliers):
+                if len(inliers) == max_local: break
+                err = errorForIdx(j, P, E, frame_mat)
+                if err <= frame_err:
+                    outliers.remove(j)
+                    inliers.append(j)
+                    
+            if len(inliers) < max_local:
+                for j in outliers:
+                    print(frame_err, errorForIdx(j, P, E, frame_mat))
+                break
+                    
+            # New inliers ?
+            if 0:
+                print("Frame #%u: Tx=%g, Ty=%g, LocErr(%u)=%g GlobErr=%g" % (i, angle, GTx, GTy, oN, oErr, Err))
                 fp.write("%le %le %le %le %u\n" % (GAc, GCc, GTx, GTy, i))
                 break
 
-            # Keep local error low
-            if Err > 0.1:
-                #print("LErr too high:", Err)
-                r = range(len(P)-3)
-                inliners = list(sample(r, max_local))
-                outliners = [j for j in r if j not in inliners]
-                del r
-
-                GAc = 0.0
-                GCc = 0.0
-                GTx = 0.0
-                GTy = 0.0
-                oErr = 1e+52
-                continue
-                
-            oN = N
-            oErr = Err
-            GAc = Ac
-            GCc = Cc
-            GTx = Tx
-            GTy = Ty
-
-            # Refine inliners
-            for j in inliners:
-                ex = (Ac*P[j][0] - Cc*P[j][1] + Tx) - E[j][0]
-                ey = (Cc*P[j][0] + Ac*P[j][1] + Ty) - E[j][1]
-                err = ex*ex + ey*ey
-                if err > Err:
-                    outliners.append(j)
-            inliners = [j for j in inliners if j not in outliners]
-
-            # Check outliners
-            for j in outliners:                
-                ex = (Ac*P[j][0] - Cc*P[j][1] + Tx) - E[j][0]
-                ey = (Cc*P[j][0] + Ac*P[j][1] + Ty) - E[j][1]
-                err = ex*ex + ey*ey
-                if err < Err:
-                    inliners.append(j)
-
-            outliners = [j for j in outliners if j not in inliners]
-        
         ftset.trackers = ftset.estimations
         im1.flush()
         im1 = im2
@@ -237,41 +198,146 @@ with open(argv[2], 'w') as fp:
 del ctx, ftset
 
 """
-[a b tx] . [px py 1]T = [ex]
-[c d ty]                [ey]
+Notes:
 
-rot matrix:
-a = d = cos(teta)
-b = -c = -sin(teta)
+Need to compute the 2D affine transformation matrix M:
+    e = M.p
 
-ex[i] = a.px[i]-c.py[i]+tx
-ey[i] = c.px[i]+a.py[i]+ty
+where:
 
-[px[0] -py[0] 1 | ex[0]]
-[px[1] -py[1] 1 | ex[1]]
-[px[2] -py[2] 1 | ex[2]]
+    |a b tx|      
+M = |c d ty|; e = |ex ey 1|T; p = |px py 1|T
+    |0 0  1|
 
-[py[0] px[0] 1 | ey[0]]
-[py[1] px[1] 1 | ey[1]]
-[py[2] px[2] 1 | ey[2]]
+Note that a,b,c,d constitues coef. of a rotation matrix:
+    a = d = cos(teta) = cs
+    c = -b = sin(teta) = sn
 
-(1) a = (ex[i] + c.py[i] - tx) / px[i]
-(2) a = (ey[i] - c.px[i] - ty) / py[i]
+=> 6 dof, so we need at least 3 points (3x2 values) to resolve the M matrix.
 
-(1) = (2) => (ex[i] + c.py[i] - tx) / px[i] = (ey[i] - c.px[i] - ty) / py[i]
-<=> (ex[i] + c.py[i] - tx).py[i] = (ey[i] - c.px[i] - ty).px[i]
-<=> ex[i].py[i] + c.py[i].py[i] - tx.py[i] = ey[i].px[i] - c.px[i].px[i] - ty.px[i]
-<=> c.py[i].py[i] - tx.py[i] + c.px[i].px[i] + ty.px[i] = -ex[i].py[i] + ey[i].px[i]
-<=> c.py[i]^2 - tx.py[i] + c.px[i]^2 + ty.px[i] = ey[i].px[i] - ex[i].py[i]
-<=> c.(px[i]^2 + py[i]^2) - tx.py[i] + ty.px[i] = ey[i].px[i] - ex[i].py[i]
+a.px(i) + b.py(i) + tx = ex(i)
+c.px(i) + d.py(i) + ty = ey(i)
 
-A[i]=px[i]^2 + py[i]^2
-B[i]=py[i]
-C[i]=px[i]
-D[i]=ey[i].px[i] - ex[i].py[i]
+This gives following equation to solve:
 
-[A[0] B[0] C[0] | D[0]]    [c=sin(teta)]
-[A[1] B[1] C[1] | D[1]] => [-tx]
-[A[2] B[2] C[2] | D[2]]    [ty]
+Pn.N = En
 
+Where:
+
+| px(0)   py(0)     0      0     1 0|   | a|   | ex(0) |
+|   0       0     px(0)   py(0)  0 1|   | b|   | ey(0) |
+                 ...                  . | c| =    ...
+|px(n-1) py(n-1)    0       0    1 0|   | d|   |ex(n-1)|
+|   0       0    px(n-1) py(n-1) 0 1|   |tx|   |ey(n-1)|
+                                        |ty|
+and n >= 3
+
+This is give the augmented matrix:
+
+[ px(0)   py(0)     0      0     1 0 | ex(0) ] | a|
+[   0       0     px(0)   py(0)  0 1 | ey(0) ] | b|
+[ px(1)   py(1)     0      0     1 0 | ex(1) ] | c|
+[   0       0     px(1)   py(1)  0 1 | ey(1) ] | d|
+[ px(2)   py(2)     0      0     1 0 | ex(2) ] |tx|
+[   0       0     px(2)   py(2)  0 1 | ey(2) ] |ty|
+
+[ px0     py0       0       0  1 0 | ex0 ]
+[   0       0     px0     py0  0 1 | ey0 ]
+[ px1     py1       0       0  1 0 | ex1 ]
+[   0       0     px1     py1  0 1 | ey1 ]
+[ px2     py2       0       0  1 0 | ex2 ]
+[   0       0     px2     py2  0 1 | ey2 ]
+
+[ px0     py0       0       0  1 0 | ex0 ]
+[ px1     py1       0       0  1 0 | ex1 ]
+[   0       0     px0     py0  0 1 | ey0 ]
+[   0       0     px1     py1  0 1 | ey1 ]
+[ px2     py2       0       0  1 0 | ex2 ]
+[   0       0     px2     py2  0 1 | ey2 ]
+
+[   1   py0/px0     0       0  1/px0 0 | ex0/px0 ]
+...
+
+[ 1          py0/px0    0    0      1/px0  0 |         ex0/px0 ]
+[ 0  py1-px1.py0/px0    0    0  1-px1/px0  0 | ex1-px1.ex0/px0 ]
+[ 0                0  px0  py0          0  1 |             ey0 ]
+[ 0                0  px1  py1          0  1 |             ey1 ]
+[ 0  py2-px2.py0/px0    0    0  1-px2/px0  0 | ex2-px2.ex0/px0 ]
+[ 0                0  px2  py2          0  1 |             ey2 ]
+
+[ 1          py0/px0    0    0                        1/px0  0 |                             ex0/px0 ]
+[ 0                1    0    0  (px0-px1)/(py1.px0-px1.py0)  0 | (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0                0  px0  py0                            0  1 |                                 ey0 ]
+[ 0                0  px1  py1                            0  1 |                                 ey1 ]
+[ 0  py2-px2.py0/px0    0    0                    1-px2/px0  0 |                     ex2-px2.ex0/px0 ]
+[ 0                0  px2  py2                            0  1 |                                 ey2 ]
+
+[ 1  py0/px0    0    0                                                                              1/px0  0 |                                                                                           ex0/px0 ]
+[ 0        1    0    0                                                        (px0-px1)/(py1.px0-px1.py0)  0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0        0  px0  py0                                                                                  0  1 |                                                                                               ey0 ]
+[ 0        0  px1  py1                                                                                  0  1 |                                                                                               ey1 ]
+[ 0        0    0    0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))  0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
+[ 0        0  px2  py2                                                                                  0  1 |                                                                                               ey2 ]
+
+[ 1  py0/px0    0        0                                                                              1/px0      0 |                                                                                           ex0/px0 ]
+[ 0        1    0        0                                                        (px0-px1)/(py1.px0-px1.py0)      0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0        0    1  py0/px0                                                                                  0  1/px0 |                                                                                           ey0/px0 ]
+[ 0        0  px1      py1                                                                                  0      1 |                                                                                               ey1 ]
+[ 0        0    0        0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))      0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
+[ 0        0  px2      py2                                                                                  0      1 |                                                                                               ey2 ]
+
+[ 1  py0/px0    0                      0                                                                              1/px0              0 |                                                                                           ex0/px0 ]
+[ 0        1    0                      0                                                        (px0-px1)/(py1.px0-px1.py0)              0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0        0    1                py0/px0                                                                                  0          1/px0 |                                                                                           ey0/px0 ]
+[ 0        0    0  (py1.px0-px1.py0)/px0                                                                                  0  (px0-px1)/px0 |                                                                             (ey1.px0-px1.ey0)/px0 ]
+[ 0        0    0                      0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))              0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
+[ 0        0    0  (py2.px0-px2.py0)/px0                                                                                  0  (px0-px2)/px0 |                                                                             (ey2.px0-px2.ey0)/px0 ]
+
+[ 1  py0/px0    0                      0                                                                              1/px0                            0 |                                                                                           ex0/px0 ]
+[ 0        1    0                      0                                                        (px0-px1)/(py1.px0-px1.py0)                            0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0        0    1                py0/px0                                                                                  0                        1/px0 |                                                                                           ey0/px0 ]
+[ 0        0    0                      1                                                                                  0  (px0-px1)/(py1.px0-px1.py0) |                                                               (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
+[ 0        0    0                      0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))                            0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
+[ 0        0    0  (py2.px0-px2.py0)/px0                                                                                  0                (px0-px2)/px0 |                                                                             (ey2.px0-px2.ey0)/px0 ]
+
+[ 1  py0/px0    0        0                                                                              1/px0                                                                                  0 |                                                                                           ex0/px0 ]
+[ 0        1    0        0                                                        (px0-px1)/(py1.px0-px1.py0)                                                                                  0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0        0    1  py0/px0                                                                                  0                                                                              1/px0 |                                                                                           ey0/px0 ]
+[ 0        0    0        1                                                                                  0                                                        (px0-px1)/(py1.px0-px1.py0) |                                                               (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
+[ 0        0    0        0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))                                                                                  0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
+[ 0        0    0        0                                                                                  0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) | ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
+
+[ 1  py0/px0    0        0                        1/px0                                                                                  0 |                                                                                                                             ex0/px0 ]
+[ 0        1    0        0  (px0-px1)/(py1.px0-px1.py0)                                                                                  0 |                                                                                                 (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0        0    1  py0/px0                            0                                                                              1/px0 |                                                                                                                             ey0/px0 ]
+[ 0        0    0        1                            0                                                        (px0-px1)/(py1.px0-px1.py0) |                                                                                                 (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
+[ 0        0    0        0                            1                                                                                  0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
+[ 0        0    0        0                            0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) |                                   ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
+
+[ 1  py0/px0    0        0                        1/px0                            0 |                                                                                                                             ex0/px0 ]
+[ 0        1    0        0  (px0-px1)/(py1.px0-px1.py0)                            0 |                                                                                                 (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
+[ 0        0    1  py0/px0                            0                        1/px0 |                                                                                                                             ey0/px0 ]
+[ 0        0    0        1                            0  (px0-px1)/(py1.px0-px1.py0) |                                                                                                 (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
+[ 0        0    0        0                            1                            0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
+[ 0        0    0        0                            0                            1 | ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
+
+ty = ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))
+tx = ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))
+d = ((ey1.px0-px1.ey0) - ty.(px0-px1))/(py1.px0-px1.py0)
+c = (ey0 - d.py0 - ty)/px0
+b = ((ex1.px0-px1.ex0) - tx.(px0-px1))/(py1.px0-px1.py0)
+a = (ex0 - b.py0 - tx)/px0
+
+P1 = py1.px0 - px1.py0
+P2 = py2.px0 - px2.py0
+E1 = ex1.px0 - px1.ex0
+E2 = ey1.px0 - px1.ey0
+Dx02 = px0-px2
+Dx01 = px0-px1
+ty = ((ey2.px0-px2.ey0).P1 - E2.P2) / (Dx02.P1 - Dx01.P2)
+tx = ((ex2.px0-px2.ex0).P1 - E1.P2) / (Dx02.P1 - Dx01.P2)
+d = (E2 - ty.Dx01) / P1
+c = (ey0 - d.py0 - ty)  / px0
+b = (E1 - tx.Dx01) / P1
+a = (ex0 - b.py0 - tx)  / px0
 """
