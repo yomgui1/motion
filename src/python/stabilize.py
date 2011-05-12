@@ -5,12 +5,12 @@ from random import sample
 from math import log
 import sys
 
-outliers_prob = 0.1
+outliers_prob = 0.01
 
 files = sorted(glob(argv[1]))
 
 im1 = load_image(files[0])
-corners = detect_corners(im1.grayscale, 0.3, 1000)
+corners = detect_corners(im1.grayscale, 0.4, 1000)
 
 cx = im1.width/2
 cy = im1.height/2
@@ -62,6 +62,7 @@ def solveAffineMatrix(samples):
     ty = (YE02*YP01 - YE01*YP02) / den
     #tx = (XE02 - YP02*ex0) / (Vx02 - YP02) # see note2 below
     tx = (XE02*YP01 - XE01*YP02) / den
+    
     d  = (YE01 - ty*Vx01) / YP01
     c  = (ey0 - d*py0 - ty) / px0
     b  = (XE01 - tx*Vx01) / YP01
@@ -70,7 +71,7 @@ def solveAffineMatrix(samples):
     return (a,b,c,d,tx,ty)
         
 def getError(model, p, e):
-    ex = (model[0]*p[0] - model[1]*p[1] + model[4]) - e[0]
+    ex = (model[0]*p[0] + model[1]*p[1] + model[4]) - e[0]
     ey = (model[2]*p[0] + model[3]*p[1] + model[5]) - e[1]
     return ex*ex + ey*ey
     
@@ -86,8 +87,10 @@ def computeScore(model, samples, threshold):
             score += threshold
     return score, inliers
 
-max_error = 0.1
+max_error = 1.0
+threshold = 2 * (max_error**2)
 max_max_iterations = 1000
+min_samples = 3
 
 with open(argv[2], 'w') as fp:
     for i in range(1, len(files)):
@@ -95,19 +98,16 @@ with open(argv[2], 'w') as fp:
 
         ctx.track(im1, im2, ftset)
 
-        P = [ (x-cx, y-cx) for x,y in ftset.tracked ]
-        E = [ (x-cx, y-cx) for x,y in ftset.estimations ]
+        #P = [ (x-cx, y-cx) for x,y in ftset.tracked ]
+        #E = [ (x-cx, y-cx) for x,y in ftset.estimations ]
+        allsamples = tuple(zip(ftset.tracked, ftset.estimations))
 
-        min_samples = 3
-
-        print("Frame %u: remains %u tracker(s)" % (i, len(ftset.tracked)))
+        print("Frame %u: remains %u tracker(s)" % (i, len(allsamples)))
         
-        if min_samples > len(P):
+        if min_samples > len(allsamples):
             fp.write("1 0 0 1 0 0 %u\n" % i)
             continue
         
-        allsamples = tuple(zip(P, E))
-        threshold = 2 * (max_error**2)
         best_score = 1e308 # huge value
         best_model = [1, 0, 0, 1, 0, 0]
         best_inliers = []
@@ -118,7 +118,7 @@ with open(argv[2], 'w') as fp:
         while k < max_iterations:
             k += 1
             
-            best_inliers = [ allsamples[j] for j in sample(range(len(allsamples)), min_samples) ]
+            best_inliers = sample(allsamples, min_samples)
             
             # Compute models list for these sampled points
             model = solveAffineMatrix(best_inliers)

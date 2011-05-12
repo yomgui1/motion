@@ -18,8 +18,6 @@ cr = cairo.Context(target)
 frames = 0
 frame_mat = [ [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] ]
 
-alpha = 0.9
-
 with open(argv[2], 'r') as fp:
     for line in fp.readlines():
         frame_mat.append(map(float, line.split())[:-1])
@@ -32,24 +30,23 @@ max_x = width-1
 max_y = height-1
 
 cum_mat = cairo.Matrix()
-for i in xrange(1, frames):   
-    tx, ty = frame_mat[i-1][-2:]
-    #mat = cairo.Matrix(a,c,b,d,tx,ty)
-    mat = cairo.Matrix(1,0,0,1,tx,ty)
-    #mat.invert()
+for i in xrange(frames):   
+    a,b,c,d,tx,ty = frame_mat[i]
+    mat = cairo.Matrix(d,c,b,a,tx,ty)
     cum_mat = mat * cum_mat
+    
+    x1, y1 = cum_mat.transform_point(0, 0)
+    x2, y2 = cum_mat.transform_point(0, height-1)
+    x3, y3 = cum_mat.transform_point(width-1, 0)
+    x4, y4 = cum_mat.transform_point(width-1, height-1)
+    
+    x1, x2, x3, x4 = sorted((x1,x2,x3,x4))
+    y1, y2, y3, y4 = sorted((y1,y2,y3,y4))
 
-    cr.save()
-    cr.rectangle(0, 0, width, height)
-    cr.clip()
-    cr.set_matrix(cum_mat)
-    x1,y1,x2,y2 = cr.clip_extents()
-    cr.restore()
-        
-    min_x = max(min_x, x1)
-    min_y = max(min_y, y1)
-    max_x = min(max_x, x2)
-    max_y = min(max_y, y2)
+    min_x = max(min_x, x2)
+    min_y = max(min_y, y2)
+    max_x = min(max_x, x3)
+    max_y = min(max_y, y3)
 
 min_x = int(ceil(min_x))
 min_y = int(ceil(min_y))
@@ -72,26 +69,17 @@ print "Cropping: Offset=(%u, %u), Scale=%g" % (min_x, min_y, scale)
 cr.save()
 mat = cairo.Matrix()
 crop_mat = cairo.Matrix()
-
 crop_mat.translate(-min_x, -min_y)
 crop_mat.scale(scale, scale)
 mat = mat.multiply(crop_mat)
 
 cum_mat = cairo.Matrix()
 for i in xrange(frames):
-    cr.set_source_rgb(0, 0, 0)
-    cr.paint()
-    
     a,b,c,d,tx,ty = frame_mat[i]
-
-    #a = atan(c/a)
-    #cs = cos(a)
-    #sn = sin(a)
     
     # Cumulate translation but not rotation
-    #mat = cairo.Matrix(a,c,b,d,tx,ty)
-    #mat = cairo.Matrix(cs,sn,-sn,cs,tx,ty)
-    mat = cairo.Matrix(1,0,0,1,tx,ty)
+    mat = cairo.Matrix(d,c,b,a,tx,ty)
+    #mat = cairo.Matrix(1,0,0,1,tx,ty)
     mat.invert()
     cum_mat = mat * cum_mat
 
