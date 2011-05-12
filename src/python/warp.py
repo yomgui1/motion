@@ -2,7 +2,7 @@ from __future__ import with_statement
 
 from sys import argv
 from glob import glob
-from math import pi, ceil, floor, atan
+from math import pi, ceil, floor, atan, cos, sin
 import cairo, os
 
 files = sorted(glob(argv[1]))
@@ -16,7 +16,7 @@ target = cairo.ImageSurface(fmt, width, height)
 cr = cairo.Context(target)
 
 frames = 0
-frame_mat = [ [0.0]*6 ]
+frame_mat = [ [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] ]
 
 alpha = 0.9
 
@@ -32,14 +32,12 @@ max_x = width-1
 max_y = height-1
 
 cum_mat = cairo.Matrix()
-smoothed_frame_mat = [ [0.0]*6 ]
-
-for i in xrange(1, frames):
-    data = [ smoothed_frame_mat[i-1][j] - alpha * (smoothed_frame_mat[i-1][j] - frame_mat[i-1][j]) for j in xrange(6) ]
-    smoothed_frame_mat.append(data)
-    
-    tx, ty = data[-2:]
-    cum_mat.translate(tx, ty)
+for i in xrange(1, frames):   
+    tx, ty = frame_mat[i-1][-2:]
+    #mat = cairo.Matrix(a,c,b,d,tx,ty)
+    mat = cairo.Matrix(1,0,0,1,tx,ty)
+    #mat.invert()
+    cum_mat = mat * cum_mat
 
     cr.save()
     cr.rectangle(0, 0, width, height)
@@ -62,7 +60,6 @@ w = max_x - min_x + 1
 h = max_y - min_y + 1
 
 # Compute scaling factor to keep aspect
-print width, height, w, h
 aspect1 = float(width)/height
 aspect2 = float(w)/h
 if aspect1 < aspect2:
@@ -85,19 +82,22 @@ for i in xrange(frames):
     cr.set_source_rgb(0, 0, 0)
     cr.paint()
     
-    coef = smoothed_frame_mat[i]
+    a,b,c,d,tx,ty = frame_mat[i]
+
+    #a = atan(c/a)
+    #cs = cos(a)
+    #sn = sin(a)
     
     # Cumulate translation but not rotation
-    cum_mat.translate(-coef[-2], -coef[-1])
-
-    # XXX: affine matrix seems wrong (gives a more unstable sequence!)
-    #affine_mat = cairo.Matrix(*coef[:4])
-    #affine_mat.invert()
+    #mat = cairo.Matrix(a,c,b,d,tx,ty)
+    #mat = cairo.Matrix(cs,sn,-sn,cs,tx,ty)
+    mat = cairo.Matrix(1,0,0,1,tx,ty)
+    mat.invert()
+    cum_mat = mat * cum_mat
 
     mat = cairo.Matrix()
     mat *= cum_mat
-    #mat *= affine_mat
-    #mat *= crop_mat
+    mat *= crop_mat
     cr.set_matrix(mat)
     
     surface = cairo.ImageSurface.create_from_png(files[i])

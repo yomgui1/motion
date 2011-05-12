@@ -2,14 +2,15 @@ from motion import *
 from sys import argv
 from glob import glob
 from random import sample
+from math import log
 import sys
 
-outliers_prob = 0.5
+outliers_prob = 0.1
 
 files = sorted(glob(argv[1]))
 
 im1 = load_image(files[0])
-corners = detect_corners(im1.grayscale, 0.2)
+corners = detect_corners(im1.grayscale, 0.3, 1000)
 
 cx = im1.width/2
 cy = im1.height/2
@@ -21,89 +22,72 @@ del corners
 print("%u tracker(s) found." % len(ftset.trackers))
 
 ctx = KLTContext()
-
-def getSamples(P, n):
-    r = range(len(P))
-    inliers = list(sample(r, n))
-    return inliers, [ j for j in r if j not in inliers ]
         
-def computeAffineMatrix(idx, P, E):
-    """See notes below.
+def solveAffineMatrix(samples):
+    """solveAffineMatrix(samples) -> err
+    Solve the equation M.p = e for three (p, e) points in samples.
+
+    M : is a 3x2 matrix, describing an affine transformation (model).
+    p : is the input 2D point
+    e : is an estimation of p.
+    
+    See notes below to know how this equations have been found.
     """
 
-    P = [P[j] for j in idx]
-    E = [E[j] for j in idx]
-
     # Use first 3-points to compute basic matrix coeffiscients
-    px0 = P[0][0]
-    px1 = P[1][0]
-    px2 = P[2][0]
-    py0 = P[0][1]
-    py1 = P[1][1]
-    py2 = P[2][1]
-    ex0 = E[0][0]
-    ex1 = E[1][0]
-    ex2 = E[2][0]
-    ey0 = E[0][1]
-    ey1 = E[1][1]
-    ey2 = E[2][1]
+    p0, e0 = samples[0]
+    p1, e1 = samples[1]
+    p2, e2 = samples[2]
     
-    P1 = py1*px0 - px1*py0
-    P2 = py2*px0 - px2*py0
-    E1 = ex1*px0 - px1*ex0
-    E2 = ey1*px0 - px1*ey0
-    Dx02 = px0-px2
-    Dx01 = px0-px1
-    den = Dx02*P1 - Dx01*P2
-    
-    ty = ((ey2*px0 - px2*ey0)*P1 - E2*P2) / den
-    tx = ((ex2*px0 - px2*ex0)*P1 - E1*P2) / den
-    d = (E2 - ty*Dx01) / P1
-    c = (ey0 - d*py0 - ty) / px0
-    b = (E1 - tx*Dx01) / P1
-    a = (ex0 - b*py0 - tx) / px0
-    
-    mat = [a,b,c,d,tx,ty]
+    px0, py0 = p0
+    ex0, ey0 = e0
+    px1, py1 = p1
+    ex1, ey1 = e1
+    px2, py2 = p2
+    ex2, ey2 = e2
 
-    # Then compute and sum matrix coef. for remaining points
-    for p, e in zip(P[3:], E[3:]):
-        pxi = p[0]
-        pyi = p[1]
-        exi = e[0]
-        eyi = e[1]
+    Vx01 =     px0 -     px1
+    YP01 = py1*px0 - py0*px1
+    XE01 = ex1*px0 - ex0*px1
+    YE01 = ey1*px0 - ey0*px1
+    
+    Vx02 =     px0 -     px2
+    YP02 = py2*px0 - py0*px2
+    XE02 = ex2*px0 - ex0*px2
+    YE02 = ey2*px0 - ey0*px2
         
-        Pi = pyi*px0 - pxi*py0
-        Dx0i = px0 - pxi
-        den = Dx0i*P1 - Dx01*Pi
-        if not den: continue
-        
-        ty = ((eyi*px0 - pxi*ey0)*P1 - E2*Pi) / den
-        tx = ((exi*px0 - pxi*ex0)*P1 - E1*Pi) / den
-        d = (E2 - ty*Dx01) / P1
-        c = (ey0 - d*py0 - ty) / px0
-        b = (E1 - tx*Dx01) / P1
-        a = (ex0 - b*py0 - tx) / px0
+    den = (Vx02*YP01 - Vx01*YP02)
+    if not (den and YP01 and px0):
+        return (1,0,0,1,0,0)
+    ty = (YE02*YP01 - YE01*YP02) / den
+    #tx = (XE02 - YP02*ex0) / (Vx02 - YP02) # see note2 below
+    tx = (XE02*YP01 - XE01*YP02) / den
+    d  = (YE01 - ty*Vx01) / YP01
+    c  = (ey0 - d*py0 - ty) / px0
+    b  = (XE01 - tx*Vx01) / YP01
+    a  = (ex0 - b*py0 - tx) / px0
 
-        mat[0] += a
-        mat[1] += b
-        mat[2] += c
-        mat[3] += d
-        mat[4] += tx
-        mat[5] += ty
+    return (a,b,c,d,tx,ty)
         
-    n = len(idx)
-    return tuple(v/n for v in mat)
-        
-def pointError(p, e, mat):
-    ex = (mat[0]*p[0] - mat[1]*p[1] + mat[4]) - e[0]
-    ey = (mat[2]*p[0] + mat[3]*p[1] + mat[5]) - e[1]
+def getError(model, p, e):
+    ex = (model[0]*p[0] - model[1]*p[1] + model[4]) - e[0]
+    ey = (model[2]*p[0] + model[3]*p[1] + model[5]) - e[1]
     return ex*ex + ey*ey
     
-def computeError(idx, P, E, mat):
-        err = 0.0
-        for j in idx:
-            err += pointError(P[j], E[j], mat)
-        return err/len(idx)
+def computeScore(model, samples, threshold):
+    score = 0.0
+    inliers = []
+    for s in samples:
+        err = getError(model, *s)
+        if err < threshold:
+            inliers.append(s)
+            score += err
+        else:
+            score += threshold
+    return score, inliers
+
+max_error = 0.1
+max_max_iterations = 1000
 
 with open(argv[2], 'w') as fp:
     for i in range(1, len(files)):
@@ -113,79 +97,49 @@ with open(argv[2], 'w') as fp:
 
         P = [ (x-cx, y-cx) for x,y in ftset.tracked ]
         E = [ (x-cx, y-cx) for x,y in ftset.estimations ]
-        max_local = max(3, int(len(P) * (1-outliers_prob)))
 
-        print("Frame %u: remains %u tracker(s), max inliers: %u" % (i, len(ftset.tracked), max_local))
+        min_samples = 3
+
+        print("Frame %u: remains %u tracker(s)" % (i, len(ftset.tracked)))
         
-        # Start using a good samples
-        if len(P) > 3:
-            inliers, outliers = getSamples(P, max_local)
-        else:
-            inliers = [0,1,2]
-            outliers = []
+        if min_samples > len(P):
+            fp.write("1 0 0 1 0 0 %u\n" % i)
+            continue
         
-        allindx = range(len(P))
-        frame_mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-        frame_err = 1e+52
-        retry = 0
+        allsamples = tuple(zip(P, E))
+        threshold = 2 * (max_error**2)
+        best_score = 1e308 # huge value
+        best_model = [1, 0, 0, 1, 0, 0]
+        best_inliers = []
         
-        while 1:
-            mat = [0.0]*6
+        # Applying RANSAC algorithme to find the model
+        k = 0
+        max_iterations = max_max_iterations
+        while k < max_iterations:
+            k += 1
+            
+            best_inliers = [ allsamples[j] for j in sample(range(len(allsamples)), min_samples) ]
+            
+            # Compute models list for these sampled points
+            model = solveAffineMatrix(best_inliers)
 
-            # Compute frame matrix with inliners
-            mat = computeAffineMatrix(inliers, P, E)
-            
-            # Compute the average error on this matrix for inliers
-            loc_err = computeError(inliers, P, E, mat)
-            #print("Frame %u: Err=%le (%u inliers)" % (i, loc_err, len(inliers)))
-            
-            if loc_err > frame_err:
-                #print("Frame %u: err inc (frame err=%g)" % (i, frame_err))
-                print("Frame %u: Err=%le (inc), a=%g, b=%g, c=%g, d=%g, tx=%g, ty=%g" % ((i,frame_err)+frame_mat))
-                fp.write("%le %le %le %le %le %le %u\n" % (frame_mat+(i,)))
-                break
-                
-            frame_err = loc_err
-            frame_mat = mat
-            del mat, loc_err
-            
-            # Remove all inliers with bigger error than this average
-            for j in tuple(inliers):
-                err = pointError(P[j], E[j], frame_mat)
-                if err > frame_err:
-                    inliers.remove(j)
-                    outliers.append(j)
-                    
-            frame_err = computeError(inliers, P, E, frame_mat)
-            #print("Frame %u: refined Err=%g (%u inliers, %u outliers)" % (i, frame_err, len(inliers), len(outliers)))
-            
-            # Tests all outliers to find new inliers
-            for j in tuple(outliers):
-                if len(inliers) == max_local: break
-                err = pointError(P[j], E[j], frame_mat)
-                if err <= frame_err:
-                    outliers.remove(j)
-                    inliers.append(j)
-
-            # Not enough inliers?
-            if len(inliers) < max_local:
-                if frame_err > 1.0:
-                    retry += 1
-                    if retry <= len(P):
-                        frame_mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                        frame_err = 1e+52
-                        inliers, outliers = getSamples(P, max_local)
-                        sys.stdout.write("  retry %u\r" % retry)
-                        continue
-                    else:
-                        print("Frame %u: too much error, use identity motion matrix!" % i)
-                        fp.write("1.0 0.0 0.0 1.0 0.0 0.0 %u\n" % i)
-                        break
-                
-                print("Frame %u: Err=%le, a=%g, b=%g, c=%g, d=%g, tx=%g, ty=%g" % ((i,frame_err)+frame_mat))
-                fp.write("%le %le %le %le %le %le %u\n" % (frame_mat+(i,)))
-                break
-
+            # Compute the summed square error over all points for the model
+            # and find the model giving the minimal value.
+            score, inliers_candidates = computeScore(model, allsamples, threshold)
+            if score < best_score:
+                best_score = score
+                best_model = model
+                if inliers_candidates:
+                    best_inliers = inliers_candidates
+                    w = len(best_inliers) / len(allsamples)
+                    if w < 1.0:
+                        max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
+                        max_iterations = min(max_iterations, max_max_iterations)
+        
+        print("Frame %u: best err of %le over %u inliers (%u iterations)" % (i, score/len(allsamples), len(best_inliers), k))
+        print("Frame %u: model=(%le, %le, %le, %le, %le, %le)" % ((i,)+best_model))
+        fp.write("%le %le %le %le %le %le %u\n" % (best_model + (i,)))
+        
         ftset.trackers = ftset.estimations
         im1.flush()
         im1 = im2
@@ -230,178 +184,182 @@ and n >= 3
 
 This is give the augmented matrix:
 
-[ px(0)   py(0)     0      0     1 0 | ex(0) ]
-[   0       0     px(0)   py(0)  0 1 | ey(0) ]
-[ px(1)   py(1)     0      0     1 0 | ex(1) ]
-[   0       0     px(1)   py(1)  0 1 | ey(1) ]
-[ px(2)   py(2)     0      0     1 0 | ex(2) ]
-[   0       0     px(2)   py(2)  0 1 | ey(2) ]
-
-[ px0     py0       0       0  1 0 | ex0 ]
-[   0       0     px0     py0  0 1 | ey0 ]
-[ px1     py1       0       0  1 0 | ex1 ]
-[   0       0     px1     py1  0 1 | ey1 ]
-[ px2     py2       0       0  1 0 | ex2 ]
-[   0       0     px2     py2  0 1 | ey2 ]
-
-[ px0     py0       0       0  1 0 | ex0 ]
-[ px1     py1       0       0  1 0 | ex1 ]
-[   0       0     px0     py0  0 1 | ey0 ]
-[   0       0     px1     py1  0 1 | ey1 ]
-[ px2     py2       0       0  1 0 | ex2 ]
-[   0       0     px2     py2  0 1 | ey2 ]
-
-[   1   py0/px0     0       0  1/px0 0 | ex0/px0 ]
-...
-
-[ 1          py0/px0    0    0      1/px0  0 |         ex0/px0 ]
-[ 0  py1-px1.py0/px0    0    0  1-px1/px0  0 | ex1-px1.ex0/px0 ]
-[ 0                0  px0  py0          0  1 |             ey0 ]
-[ 0                0  px1  py1          0  1 |             ey1 ]
-[ 0  py2-px2.py0/px0    0    0  1-px2/px0  0 | ex2-px2.ex0/px0 ]
-[ 0                0  px2  py2          0  1 |             ey2 ]
-
-[ 1          py0/px0    0    0                        1/px0  0 |                             ex0/px0 ]
-[ 0                1    0    0  (px0-px1)/(py1.px0-px1.py0)  0 | (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0                0  px0  py0                            0  1 |                                 ey0 ]
-[ 0                0  px1  py1                            0  1 |                                 ey1 ]
-[ 0  py2-px2.py0/px0    0    0                    1-px2/px0  0 |                     ex2-px2.ex0/px0 ]
-[ 0                0  px2  py2                            0  1 |                                 ey2 ]
-
-[ 1  py0/px0    0    0                                                                              1/px0  0 |                                                                                           ex0/px0 ]
-[ 0        1    0    0                                                        (px0-px1)/(py1.px0-px1.py0)  0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0        0  px0  py0                                                                                  0  1 |                                                                                               ey0 ]
-[ 0        0  px1  py1                                                                                  0  1 |                                                                                               ey1 ]
-[ 0        0    0    0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))  0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
-[ 0        0  px2  py2                                                                                  0  1 |                                                                                               ey2 ]
-
-[ 1  py0/px0    0        0                                                                              1/px0      0 |                                                                                           ex0/px0 ]
-[ 0        1    0        0                                                        (px0-px1)/(py1.px0-px1.py0)      0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0        0    1  py0/px0                                                                                  0  1/px0 |                                                                                           ey0/px0 ]
-[ 0        0  px1      py1                                                                                  0      1 |                                                                                               ey1 ]
-[ 0        0    0        0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))      0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
-[ 0        0  px2      py2                                                                                  0      1 |                                                                                               ey2 ]
-
-[ 1  py0/px0    0                      0                                                                              1/px0              0 |                                                                                           ex0/px0 ]
-[ 0        1    0                      0                                                        (px0-px1)/(py1.px0-px1.py0)              0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0        0    1                py0/px0                                                                                  0          1/px0 |                                                                                           ey0/px0 ]
-[ 0        0    0  (py1.px0-px1.py0)/px0                                                                                  0  (px0-px1)/px0 |                                                                             (ey1.px0-px1.ey0)/px0 ]
-[ 0        0    0                      0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))              0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
-[ 0        0    0  (py2.px0-px2.py0)/px0                                                                                  0  (px0-px2)/px0 |                                                                             (ey2.px0-px2.ey0)/px0 ]
-
-[ 1  py0/px0    0                      0                                                                              1/px0                            0 |                                                                                           ex0/px0 ]
-[ 0        1    0                      0                                                        (px0-px1)/(py1.px0-px1.py0)                            0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0        0    1                py0/px0                                                                                  0                        1/px0 |                                                                                           ey0/px0 ]
-[ 0        0    0                      1                                                                                  0  (px0-px1)/(py1.px0-px1.py0) |                                                               (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
-[ 0        0    0                      0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))                            0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
-[ 0        0    0  (py2.px0-px2.py0)/px0                                                                                  0                (px0-px2)/px0 |                                                                             (ey2.px0-px2.ey0)/px0 ]
-
-[ 1  py0/px0    0        0                                                                              1/px0                                                                                  0 |                                                                                           ex0/px0 ]
-[ 0        1    0        0                                                        (px0-px1)/(py1.px0-px1.py0)                                                                                  0 |                                                               (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0        0    1  py0/px0                                                                                  0                                                                              1/px0 |                                                                                           ey0/px0 ]
-[ 0        0    0        1                                                                                  0                                                        (px0-px1)/(py1.px0-px1.py0) |                                                               (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
-[ 0        0    0        0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0))                                                                                  0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
-[ 0        0    0        0                                                                                  0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) | ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
-
-[ 1  py0/px0    0        0                        1/px0                                                                                  0 |                                                                                                                             ex0/px0 ]
-[ 0        1    0        0  (px0-px1)/(py1.px0-px1.py0)                                                                                  0 |                                                                                                 (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0        0    1  py0/px0                            0                                                                              1/px0 |                                                                                                                             ey0/px0 ]
-[ 0        0    0        1                            0                                                        (px0-px1)/(py1.px0-px1.py0) |                                                                                                 (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
-[ 0        0    0        0                            1                                                                                  0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
-[ 0        0    0        0                            0  ((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) |                                   ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/(px0.(py1.px0-px1.py0)) ]
-
-[ 1  py0/px0    0        0                        1/px0                            0 |                                                                                                                             ex0/px0 ]
-[ 0        1    0        0  (px0-px1)/(py1.px0-px1.py0)                            0 |                                                                                                 (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ]
-[ 0        0    1  py0/px0                            0                        1/px0 |                                                                                                                             ey0/px0 ]
-[ 0        0    0        1                            0  (px0-px1)/(py1.px0-px1.py0) |                                                                                                 (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ]
-[ 0        0    0        0                            1                            0 | ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
-[ 0        0    0        0                            0                            1 | ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0)) ]
+[ px0  py0    0    0  1  0 | ex0 ]
+[   0    0  px0  py0  0  1 | ey0 ]
+[ px1  py1    0    0  1  0 | ex1 ]
+[   0    0  px1  py1  0  1 | ey1 ]
+[ px2  py2    0    0  1  0 | ex2 ]
+[   0    0  px2  py2  0  1 | ey2 ]
 
 
+1) swap some lines
 
-ty = ((ey2.px0-px2.ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))
-tx = ((ex2.px0-px2.ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py2.px0-px2.py0))/((px0-px2).(py1.px0-px1.py0)-(px0-px1).(py2.px0-px2.py0))
-d = ((ey1.px0-px1.ey0) - ty.(px0-px1))/(py1.px0-px1.py0)
-c = (ey0 - d.py0 - ty)/px0
-b = ((ex1.px0-px1.ex0) - tx.(px0-px1))/(py1.px0-px1.py0)
-a = (ex0 - b.py0 - tx)/px0
-
-P1 = py1.px0 - px1.py0
-P2 = py2.px0 - px2.py0
-E1 = ex1.px0 - px1.ex0
-E2 = ey1.px0 - px1.ey0
-Dx02 = px0-px2
-Dx01 = px0-px1
-ty = ((ey2.px0-px2.ey0).P1 - E2.P2) / (Dx02.P1 - Dx01.P2)
-tx = ((ex2.px0-px2.ex0).P1 - E1.P2) / (Dx02.P1 - Dx01.P2)
-d = (E2 - ty.Dx01) / P1
-c = (ey0 - d.py0 - ty) / px0
-b = (E1 - tx.Dx01) / P1
-a = (ex0 - b.py0 - tx) / px0
-
-=== Generalisation to more points ===
-
-if we add more 2D points to the last matrix:
-
-[ px(n-1) py(n-1)        0        0  1 0 | ex(n-1) ]
-[       0       0  px(n-1)  py(n-1)  0 1 | ey(n-1) ]
-
-These lines are solved using combination of the upper ones by doing substraction to obtain zeros:
-
-[       1  py0/px0        0        0  1/px0 0 | ex0/px0 ] (line 1)
-...
-[ px(n-1)  py(n-1)        0        0      1 0 | ex(n-1) ]
-[       0        0  px(n-1)  py(n-1)      0 1 | ey(n-1) ]
-
-[ 0                              1        0        0  (px0-px1)/(py1.px0-px1.py0) 0 | (ex1.px0-px1.ex0)/(py1.px0-px1.py0) ] (line2)
-...
-[ 0  (py(n-1).px0-px(n-1).py0)/px0        0        0            (px0-px(n-1))/px0 0 |      (ex(n-1).px0-px(n-1).ex0)/px0 ]
-[ 0                              0  px(n-1)  py(n-1)                            0 1 |                            ey(n-1) ]
-
-[ 0  0  1                        py0/px0                                                                                              0              1/px0 |                                                                                                           ey0/px0 ] (line3)
-...
-[ 0  0  0                              0  ((px0-px(n-1)).(py1.px0-px1.py0)-(py(n-1).px0-px(n-1).py0).(px0-px1))/(px0.(py1.px0-px1.py0))                  0 | ((ex(n-1).px0-px(n-1).ex0).(py1.px0-px1.py0)-(py(n-1).px0-px(n-1).py0).(ex1.px0-px1.ex0))/(px0.(py1.px0-px1.py0)) ]
-[ 0  0  0  (py(n-1).px0-px(n-1).py0)/px0                                                                                              0  (px0-px(n-1))/px0 |                                                                                     (ey(n-1).px0-px(n-1).ey0)/px0 ]
+[ px0  py0    0    0  1  0 | ex0 ]
+[ px1  py1    0    0  1  0 | ex1 ]
+[ px2  py2    0    0  1  0 | ex2 ]
+[   0    0  px0  py0  0  1 | ey0 ]
+[   0    0  px1  py1  0  1 | ey1 ]
+[   0    0  px2  py2  0  1 | ey2 ]
 
 
-[ 0  0  0  1                                                                                              0                                                                    (px0-px1)/(py1.px0-px1.py0) |                                                                               (ey1.px0-px1.ey0)/(py1.px0-px1.py0) ] (line4)
-...
-[ 0  0  0  0  ((px0-px(n-1)).(py1.px0-px1.py0)-(py(n-1).px0-px(n-1).py0).(px0-px1))/(px0.(py1.px0-px1.py0))                                                                                              0 | ((ex(n-1).px0-px(n-1).ex0).(py1.px0-px1.py0)-(ex1.px0-px1.ex0).(py(n-1).px0-px(n-1).py0))/(px0.(py1.px0-px1.py0)) ]
-[ 0  0  0  0                                                                                              0  ((px0-px(n-1)).(py1.px0-px1.py0)-(px0-px1).(py(n-1).px0-px(n-1).py0))/(px0.(py1.px0-px1.py0)) | ((ey(n-1).px0-px(n-1).ey0).(py1.px0-px1.py0)-(ey1.px0-px1.ey0).(py(n-1).px0-px(n-1).py0))/(px0.(py1.px0-px1.py0)) ]
+3) divide L1 per px0
 
-[ 0  0  0  0                                                           1                                                           0 |                                                                   tx ] (line5)
-...
-[ 0  0  0  0  ((px0-px(n-1)).P1-(py(n-1).px0-px(n-1).py0).Dx01)/(px0.P1)                                                           0 | ((ex(n-1).px0-px(n-1).ex0).P1-E1.(py(n-1).px0-px(n-1).py0))/(px0.P1) ]
-[ 0  0  0  0                                                           0  ((px0-px(n-1)).P1-Dx01.(py(n-1).px0-px(n-1).py0))/(px0.P1) | ((ey(n-1).px0-px(n-1).ey0).P1-E1.(py(n-1).px0-px(n-1).py0))/(px0.P1) ]
+[   1  py0/px0    0    0  1/px0  0 | ex0/px0 ]
+[ px1      py1    0    0      1  0 |     ex1 ]
+[ px2      py2    0    0      1  0 |     ex2 ]
+[   0        0  px0  py0      0  1 |     ey0 ]
+[   0        0  px1  py1      0  1 |     ey1 ]
+[   0        0  px2  py2      0  1 |     ey2 ]
 
-[ 0  0  0  0  1  0 |                                                                   tx ] (line5)
-[ 0  0  0  0  0  1 |                                                                   ty ] (line6)
-...
-[ 0  0  0  0  0  0 | (((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 - (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) ]
-[ 0  0  0  0  0  0 | (((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 - (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) ]
 
-This gives following equations:
+4) remove a21 and a31 by substracting ai1*a11, and replacing some values for visibility
 
-(((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 - (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) = 0
-(((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 - (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0)) / (px0.P1) = 0
+[ 1   py0/px0    0    0     1/px0  0 |  ex0/px0 ]
+[ 0  CP01/px0    0    0  Vx01/px0  0 | XE01/px0 ]
+[ 0  CP02/px0    0    0  Vx01/px0  0 | XE02/px0 ]
+[ 0         0  px0  py0         0  1 |      ey0 ]
+[ 0         0  px1  py1         0  1 |      ey1 ]
+[ 0         0  px2  py2         0  1 |      ey2 ]
 
-((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 - (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0) = 0
-((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 - (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0) = 0
+where:
+CP01 = py1.px0-px1.py0
+CP02 = py2.px0-px2.py0
+XE01 = ex1.px0-px1.ex0
+XE02 = ex2.px0-px2.ex0
+Vx01 = px0-px1
+Vx02 = px0-px2
 
-((ex(n-1).px0 - px(n-1).ex0 - tx.(px0-px(n-1))).P1 = (E1 - tx.Dx01).(py(n-1).px0 - px(n-1).py0)
-((ey(n-1).px0 - px(n-1).ey0 - ty.(px0-px(n-1))).P1 = (E1 - ty.Dx01).(py(n-1).px0 - px(n-1).py0)
 
-(ex(n-1).px0 - px(n-1).ex0).P1 - tx.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - tx.Dx01.(py(n-1).px0 - px(n-1).py0)
-(ey(n-1).px0 - px(n-1).ey0).P1 - ty.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - ty.Dx01.(py(n-1).px0 - px(n-1).py0)
+5) divide L2 per a22
 
-tx.Dx01.(py(n-1).px0 - px(n-1).py0) - tx.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ex(n-1).px0 - px(n-1).ex0)
-ty.Dx01.(py(n-1).px0 - px(n-1).py0) - ty.(px0-px(n-1)).P1 = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ey(n-1).px0 - px(n-1).ey0)
+[ 1   py0/px0    0    0      1/px0  0 |   ex0/px0 ]
+[ 0         1    0    0  Vx01/CP01  0 | XE01/CP01 ]
+[ 0  CP02/px0    0    0   Vx02/px0  0 |  XE02/px0 ]
+[ 0         0  px0  py0          0  1 |       ey0 ]
+[ 0         0  px1  py1          0  1 |       ey1 ]
+[ 0         0  px2  py2          0  1 |       ey2 ]
 
-tx.(Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1))) = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ex(n-1).px0 - px(n-1).ex0)
-ty.(Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1))) = E1.(py(n-1).px0 - px(n-1).py0) - P1.(ey(n-1).px0 - px(n-1).ey0)
 
-tx = (E1.(py(n-1).px0 - px(n-1).py0) - P1.(ex(n-1).px0 - px(n-1).ex0)) / (Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1)))
-ty = (E1.(py(n-1).px0 - px(n-1).py0) - P1.(ey(n-1).px0 - px(n-1).ey0)) / (Dx01.(py(n-1).px0 - px(n-1).py0) - P1.(px0-px(n-1)))
+6) remove a32 by substracting a32*a22
 
-well... then a,b,c and d can be found using upper equations and this both results.
+[ 1  py0/px0    0    0              1/px0  0 |               ex0/px0 ]
+[ 0        1    0    0          Vx01/CP01  0 |             XE01/CP01 ]
+[ 0        0    0    0  (Vx02 - CP02)/px0  0 | (XE02 - CP02.ex0)/px0 ]
+[ 0        0  px0  py0                  0  1 |                   ey0 ]
+[ 0        0  px1  py1                  0  1 |                   ey1 ]
+[ 0        0  px2  py2                  0  1 |                   ey2 ]
+
+
+7) swap some lines
+
+[ 1  py0/px0    0    0              1/px0  0 |               ex0/px0 ]
+[ 0        1    0    0          Vx01/CP01  0 |             XE01/CP01 ]
+[ 0        0  px0  py0                  0  1 |                   ey0 ]
+[ 0        0  px1  py1                  0  1 |                   ey1 ]
+[ 0        0  px2  py2                  0  1 |                   ey2 ]
+[ 0        0    0    0  (Vx02 - CP02)/px0  0 | (XE02 - CP02.ex0)/px0 ]
+
+
+8) divide L3 per a33
+
+[ 1  py0/px0    0        0              1/px0      0 |                ex0/px0 ]
+[ 0        1    0        0          Vx01/CP01      0 |              XE01/CP01 ]
+[ 0        0    1  py0/px0                  0  1/px0 |                ey0/px0 ]
+[ 0        0  px1      py1                  0      1 |                    ey1 ]
+[ 0        0  px2      py2                  0      1 |                    ey2 ]
+[ 0        0    0        0  (Vx02 - CP02)/px0      0 |  (XE02 - CP02.ex0)/px0 ]
+
+
+9) remove a43 and a53 by substracting ai3*a33, and replacing some values for visibility
+
+[ 1  py0/px0  0         0              1/px0         0 |               ex0/px0 ]
+[ 0        1  0         0          Vx01/CP01         0 |             XE01/CP01 ]
+[ 0        0  1   py0/px0                  0     1/px0 |               ey0/px0 ]
+[ 0        0  0  CP01/px0                  0  Vx01/px0 |              YE01/px0 ]
+[ 0        0  0  CP02/px0                  0  Vx02/px0 |              YE02/px0 ]
+[ 0        0  0         0  (Vx02 - CP02)/px0         0 | (XE02 - CP02.ex0)/px0 ]
+
+YE01 = ey1.px0-px1.ey0
+YE02 = ey2.px0-px2.ey0
+
+
+10) divide L4 per a44
+
+[ 1  py0/px0  0         0              1/px0          0 |               ex0/px0 ]
+[ 0        1  0         0          Vx01/CP01          0 |             XE01/CP01 ]
+[ 0        0  1   py0/px0                  0      1/px0 |               ey0/px0 ]
+[ 0        0  0         1                  0  Vx01/CP01 |             YE01/CP01 ]
+[ 0        0  0  CP02/px0                  0   Vx02/px0 |              YE02/px0 ]
+[ 0        0  0         0  (Vx02 - CP02)/px0          0 | (XE02 - CP02.ex0)/px0 ]
+
+
+11) remove a54 by substracting ai4*a44
+
+[ 1  py0/px0  0         0              1/px0                                 0 |                          ex0/px0 ]
+[ 0        1  0         0          Vx01/CP01                                 0 |                        XE01/CP01 ]
+[ 0        0  1   py0/px0                  0                             1/px0 |                          ey0/px0 ]
+[ 0        0  0         1                  0                         Vx01/CP01 |                        YE01/CP01 ]
+[ 0        0  0         0                  0  (Vx02.CP01-CP02.Vx01)/(px0.CP01) | (YE02.CP01-CP02.YE01)/(px0.CP01) ]
+[ 0        0  0         0  (Vx02 - CP02)/px0                                 0 |            (XE02 - CP02.ex0)/px0 ]
+
+
+12) swap some lines
+
+[ 1  py0/px0  0         0              1/px0                                 0 |                          ex0/px0 ]
+[ 0        1  0         0          Vx01/CP01                                 0 |                        XE01/CP01 ]
+[ 0        0  1   py0/px0                  0                             1/px0 |                          ey0/px0 ]
+[ 0        0  0         1                  0                         Vx01/CP01 |                        YE01/CP01 ]
+[ 0        0  0         0  (Vx02 - CP02)/px0                                 0 |            (XE02 - CP02.ex0)/px0 ]
+[ 0        0  0         0                  0  (Vx02.CP01-CP02.Vx01)/(px0.CP01) | (YE02.CP01-CP02.YE01)/(px0.CP01) ]
+
+
+13) divide L5 per a55
+
+[ 1  py0/px0  0         0      1/px0                                 0 |                          ex0/px0 ]
+[ 0        1  0         0  Vx01/CP01                                 0 |                        XE01/CP01 ]
+[ 0        0  1   py0/px0          0                             1/px0 |                          ey0/px0 ]
+[ 0        0  0         1          0                         Vx01/CP01 |                        YE01/CP01 ]
+[ 0        0  0         0          1                                 0 |  (XE02 - CP02.ex0)/(Vx02 - CP02) ]
+[ 0        0  0         0          0  (Vx02.CP01-CP02.Vx01)/(px0.CP01) | (YE02.CP01-CP02.YE01)/(px0.CP01) ]
+
+
+14) divide L6 per a66
+
+[ 1  py0/px0  0         0      1/px0          0 |                                         ex0/px0 ]
+[ 0        1  0         0  Vx01/CP01          0 |                                       XE01/CP01 ]
+[ 0        0  1   py0/px0          0      1/px0 |                                         ey0/px0 ]
+[ 0        0  0         1          0  Vx01/CP01 |                                       YE01/CP01 ]
+[ 0        0  0         0          1          0 |                 (XE02 - CP02.ex0)/(Vx02 - CP02) ]
+[ 0        0  0         0          0          1 | (YE02.CP01 - CP02.YE01)/(Vx02.CP01 - CP02.Vx01) ]
+
+
+15) beautify pass
+
+[ 1  py0/px0  0         0      1/px0          0 |                                         ex0/px0 ]
+[ 0        1  0         0  Vx01/CP01          0 |                                       XE01/CP01 ]
+[ 0        0  1   py0/px0          0      1/px0 |                                         ey0/px0 ]
+[ 0        0  0         1          0  Vx01/CP01 |                                       YE01/CP01 ]
+[ 0        0  0         0          1          0 |                 (XE02 - CP02.ex0)/(Vx02 - CP02) ]
+[ 0        0  0         0          0          1 | (YE02.CP01 - YE01.CP02)/(Vx02.CP01 - Vx01.CP02) ]
+
+16) resolve the model coeffiscients by resolving backward over this equation:
+
+| 1  py0/px0  0         0      1/px0          0 |   |  a |   |                                         ex0/px0 |
+| 0        1  0         0  Vx01/CP01          0 |   |  b |   |                                       XE01/CP01 |
+| 0        0  1   py0/px0          0      1/px0 | . |  c | = |                                         ey0/px0 |
+| 0        0  0         1          0  Vx01/CP01 |   |  d |   |                                       YE01/CP01 |
+| 0        0  0         0          1          0 |   | tx |   |                 (XE02 - CP02.ex0)/(Vx02 - CP02) |
+| 0        0  0         0          0          1 |   | ty |   | (YE02.CP01 - YE01.CP02)/(Vx02.CP01 - Vx01.CP02) |
+
+This is gives:
+
+ty = (YE02.CP01 - YE01.CP02) / (Vx02.CP01 - Vx01.CP02)
+tx = (XE02 - CP02.ex0) / (Vx02 - CP02)
+d  = (YE01 - ty.Vx01) / CP01
+c  = (ey0 - d.py0 - ty) / px0
+b  = (XE01 - tx.Vx01) / CP01
+a  = (ex0 - b.py0 - tx) / px0
+
+Note2: I doubt of tx result, I'll use this: (XE02.CP01 - XE01.CP02) / (Vx02.CP01 - Vx01.CP02)
+=> gives better results.
 """
