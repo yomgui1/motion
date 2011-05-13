@@ -85,7 +85,7 @@ for i in xrange(frames):
 
     mat = cairo.Matrix()
     mat *= cum_mat
-    mat *= crop_mat
+    #mat *= crop_mat
     cr.set_matrix(mat)
     
     surface = cairo.ImageSurface.create_from_png(files[i])

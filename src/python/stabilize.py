@@ -5,15 +5,15 @@ from random import sample
 from math import log
 import sys
 
-outliers_prob = 0.01
+# Value used to compute number of RANSAC iterations
+# Must be in [0, 1] range.
+# Lower is, higher iterations will be.
+outliers_prob = 0.05
 
 files = sorted(glob(argv[1]))
 
 im1 = load_image(files[0])
-corners = detect_corners(im1.grayscale, 0.4, 1000)
-
-cx = im1.width/2
-cy = im1.height/2
+corners = detect_corners(im1.grayscale, 0.3, 2000)
 
 ftset = FeatureSet()
 ftset.trackers = corners
@@ -87,7 +87,7 @@ def computeScore(model, samples, threshold):
             score += threshold
     return score, inliers
 
-max_error = 1.0
+max_error = 0.1
 threshold = 2 * (max_error**2)
 max_max_iterations = 1000
 min_samples = 3
@@ -100,6 +100,7 @@ with open(argv[2], 'w') as fp:
 
         #P = [ (x-cx, y-cx) for x,y in ftset.tracked ]
         #E = [ (x-cx, y-cx) for x,y in ftset.estimations ]
+        
         allsamples = tuple(zip(ftset.tracked, ftset.estimations))
 
         print("Frame %u: remains %u tracker(s)" % (i, len(allsamples)))
@@ -108,7 +109,7 @@ with open(argv[2], 'w') as fp:
             fp.write("1 0 0 1 0 0 %u\n" % i)
             continue
         
-        best_score = 1e308 # huge value
+        best_score = 1e400 # inf for 64bits floating point
         best_model = [1, 0, 0, 1, 0, 0]
         best_inliers = []
         
@@ -120,23 +121,24 @@ with open(argv[2], 'w') as fp:
             
             best_inliers = sample(allsamples, min_samples)
             
-            # Compute models list for these sampled points
+            # Compute a model list for current inliers
             model = solveAffineMatrix(best_inliers)
 
             # Compute the summed square error over all points for the model
             # and find the model giving the minimal value.
+            # Note: inliers_candidates will never be empty and should always contains
+            # best_inliers samples, as the model is comming from them (very little score).
             score, inliers_candidates = computeScore(model, allsamples, threshold)
             if score < best_score:
                 best_score = score
                 best_model = model
-                if inliers_candidates:
-                    best_inliers = inliers_candidates
-                    w = len(best_inliers) / len(allsamples)
-                    if w < 1.0:
-                        max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
-                        max_iterations = min(max_iterations, max_max_iterations)
-        
-        print("Frame %u: best err of %le over %u inliers (%u iterations)" % (i, score/len(allsamples), len(best_inliers), k))
+                best_inliers = inliers_candidates
+                w = len(best_inliers) / len(allsamples)
+                if w < 1.0:
+                    max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
+                    max_iterations = min(max_iterations, max_max_iterations)
+
+        print("Frame %u: best err of %le over %u inliers (%u iterations)" % (i, best_score/len(allsamples), len(best_inliers), k))
         print("Frame %u: model=(%le, %le, %le, %le, %le, %le)" % ((i,)+best_model))
         fp.write("%le %le %le %le %le %le %u\n" % (best_model + (i,)))
         
