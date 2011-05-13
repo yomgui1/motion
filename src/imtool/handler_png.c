@@ -107,7 +107,7 @@ static int imt_png_load_from_file(const char *filename, IMT_Image **p_image, voi
 				err = IMT_ERR_FORMAT;
 				longjmp(png_jmpbuf(png_ptr), 1);
 		}
-		
+
 		if (((fmt == IMT_PIXFMT_GRAY8) || (fmt == IMT_PIXFMT_GRAYA16)) && (depth < 8))
 		{
 			png_set_expand(png_ptr);
@@ -118,7 +118,14 @@ static int imt_png_load_from_file(const char *filename, IMT_Image **p_image, voi
 			png_set_swap_alpha(png_ptr);
 		
 		if (fmt == IMT_PIXFMT_RGB24)
-			png_set_add_alpha(png_ptr, 0xff, PNG_FILLER_BEFORE);
+        {
+#if	__BYTE_ORDER == __LITTLE_ENDIAN
+			png_set_add_alpha(png_ptr, 0xff, PNG_FILLER_AFTER);
+            png_set_bgr(png_ptr);
+#else
+            png_set_add_alpha(png_ptr, 0xff, PNG_FILLER_BEFORE);
+#endif
+        }
 		
 		/* IMT Image allocation */
 		err = IMT_AllocImage(&image, fmt, width, height, 0, NULL);

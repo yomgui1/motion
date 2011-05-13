@@ -23,7 +23,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
-/* THIS IS A PYTHON3 MODULE */
+/* THIS IS A PYTHON2 AND PYTHON3 COMPATIBLE MODULE */
 
 #include <Python.h>
 #include <structmember.h>
@@ -37,7 +37,9 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include <fast/fast.h>
 
 
-#ifndef INITFUNC
+#if PY_MAJOR_VERSION < 3
+#define INITFUNC initmotion
+#else
 #define INITFUNC PyInit_motion
 #endif
 
@@ -291,7 +293,11 @@ image_get_prop(PyImage *self, void *closure)
 static PyObject *
 image_get_data(PyImage *self, void *closure)
 {
+#if PY_MAJOR_VERSION < 3
+    return PyBuffer_FromReadWriteMemory(self->image->data, self->image->height * self->image->stride);
+#else
     return PyBytes_FromStringAndSize(self->image->data, self->image->height * self->image->stride);
+#endif
 }
 
 static PyGetSetDef image_getseters[] = {
@@ -693,6 +699,7 @@ static int add_constants(PyObject *m)
     return 0;
 }
 
+#if PY_MAJOR_VERSION >= 3
 static PyModuleDef motionmodule =
 {
     PyModuleDef_HEAD_INIT,
@@ -701,32 +708,35 @@ static PyModuleDef motionmodule =
     -1,
     methods, NULL, NULL, NULL, NULL
 };
+#endif
 
 PyMODINIT_FUNC
 INITFUNC(void)
 {
-    PyObject *m;
+    PyObject *m=NULL;
 
     IMT_Init();
 
-    if (PyType_Ready(&PyImageType) < 0)
-        return NULL;
+    if (!PyType_Ready(&PyImageType)) {
+        if (!PyType_Ready(&PyFeatureSetType)) {
+            if (!PyType_Ready(&PyKLTContextType)) {
+#if PY_MAJOR_VERSION < 3
+                m = Py_InitModule(MODNAME, methods);
+#else
+                m = PyModule_Create(&motionmodule);
+#endif
+                if (m) {
+                    add_constants(m);
 
-    if (PyType_Ready(&PyFeatureSetType) < 0)
-        return NULL;
+                    ADD_TYPE(m, "Image", &PyImageType);
+                    ADD_TYPE(m, "FeatureSet", &PyFeatureSetType);
+                    ADD_TYPE(m, "KLTContext", &PyKLTContextType);
+                }
+            }
+        }
+    }
 
-    if (PyType_Ready(&PyKLTContextType) < 0)
-        return NULL;
-
-    m = PyModule_Create(&motionmodule);
-    if (NULL == m)
-        return NULL;
-
-    add_constants(m);
-
-    ADD_TYPE(m, "Image", &PyImageType);
-    ADD_TYPE(m, "FeatureSet", &PyFeatureSetType);
-    ADD_TYPE(m, "KLTContext", &PyKLTContextType);
-
+#if PY_MAJOR_VERSION >= 3
     return m;
+#endif
 }

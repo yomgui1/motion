@@ -1,19 +1,29 @@
+#
+# Kepp 3.x/2.x compatibility (except external modules)
+#
+
 from motion import *
 from sys import argv
 from glob import glob
 from random import sample
 from math import log
+
 import sys
+import os
+import cairo
 
 # Value used to compute number of RANSAC iterations
 # Must be in [0, 1] range.
 # Lower is, higher iterations will be.
-outliers_prob = 0.05
+outliers_prob = 0.01
+
+# maximal model average error on all trackers per frame
+max_error = 0.1
 
 files = sorted(glob(argv[1]))
 
 im1 = load_image(files[0])
-corners = detect_corners(im1.grayscale, 0.3, 2000)
+corners = detect_corners(im1.grayscale, 0.2, 200)
 
 ftset = FeatureSet()
 ftset.trackers = corners
@@ -22,7 +32,41 @@ del corners
 print("%u tracker(s) found." % len(ftset.trackers))
 
 ctx = KLTContext()
+
+class WarpTool:
+    def init_reference(self, image):
+        if image.format in (IMT_PIXFMT_RGB24, IMT_PIXFMT_ARGB32):
+            self.fmt = cairo.FORMAT_ARGB32
+        elif image.format == IMT_PIXFMT_GRAY8:
+            self.fmt = cairo.FORMAT_A8
+
+        width = image.width
+        height = image.height
         
+        self.target = cairo.ImageSurface(self.fmt, width, height)
+        self.cr = cairo.Context(self.target)
+        self.global_mat = cairo.Matrix()
+        
+    def warp(self, filename, image, motion_mat=(1,0,0,1,0,0)):
+        a,b,c,d,tx,ty = motion_mat
+        # Y-ayis is inverted between detector trackers output and cairo
+        # So I need to do manually this by swapping coefficients.
+        mat = cairo.Matrix(d,c,b,a,tx,ty)
+        mat.invert()
+        self.global_mat = mat * self.global_mat
+        self.cr.set_matrix(self.global_mat)
+        
+        surface = cairo.ImageSurface.create_for_data(image.data,
+                                                     self.fmt,
+                                                     image.width,
+                                                     image.height,
+                                                     image.stride)
+        self.cr.set_source_surface(surface, 0, 0)
+        self.cr.paint()
+        print("Writing frame '%s'" % filename)
+        self.target.write_to_png(filename)
+
+
 def solveAffineMatrix(samples):
     """solveAffineMatrix(samples) -> err
     Solve the equation M.p = e for three (p, e) points in samples.
@@ -87,33 +131,36 @@ def computeScore(model, samples, threshold):
             score += threshold
     return score, inliers
 
-max_error = 0.1
 threshold = 2 * (max_error**2)
 max_max_iterations = 1000
 min_samples = 3
 
+warp = WarpTool()
+
+# record first image as it
+warp.init_reference(im1)
+warp.warp(os.path.join(argv[3], "frame_%04u.png" % 0), im1)
+
 with open(argv[2], 'w') as fp:
     for i in range(1, len(files)):
-        im2 = load_image(files[i])
+        # reset frame state variables
+        best_score = 1e400 # inf for 64bits floating point
+        best_model = [1, 0, 0, 1, 0, 0]
 
+        # load second image and track
+        im2 = load_image(files[i])
         ctx.track(im1, im2, ftset)
 
-        #P = [ (x-cx, y-cx) for x,y in ftset.tracked ]
-        #E = [ (x-cx, y-cx) for x,y in ftset.estimations ]
-        
+        # prepare samples
         allsamples = tuple(zip(ftset.tracked, ftset.estimations))
-
         print("Frame %u: remains %u tracker(s)" % (i, len(allsamples)))
-        
+
+        # enough trackers for solving?
         if min_samples > len(allsamples):
             fp.write("1 0 0 1 0 0 %u\n" % i)
             continue
         
-        best_score = 1e400 # inf for 64bits floating point
-        best_model = [1, 0, 0, 1, 0, 0]
-        best_inliers = []
-        
-        # Applying RANSAC algorithme to find the model
+        # Applying RANSAC algorithme to find the best model
         k = 0
         max_iterations = max_max_iterations
         while k < max_iterations:
@@ -133,7 +180,7 @@ with open(argv[2], 'w') as fp:
                 best_score = score
                 best_model = model
                 best_inliers = inliers_candidates
-                w = len(best_inliers) / len(allsamples)
+                w = len(best_inliers) / float(len(allsamples))
                 if w < 1.0:
                     max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
                     max_iterations = min(max_iterations, max_max_iterations)
@@ -141,13 +188,13 @@ with open(argv[2], 'w') as fp:
         print("Frame %u: best err of %le over %u inliers (%u iterations)" % (i, best_score/len(allsamples), len(best_inliers), k))
         print("Frame %u: model=(%le, %le, %le, %le, %le, %le)" % ((i,)+best_model))
         fp.write("%le %le %le %le %le %le %u\n" % (best_model + (i,)))
+
+        filename = os.path.join(argv[3], "frame_%04u.png" % i)
+        warp.warp(filename, im2, best_model)
         
         ftset.trackers = ftset.estimations
         im1.flush()
         im1 = im2
-
-    del im1, im2
-del ctx, ftset
 
 """
 Notes:
