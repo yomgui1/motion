@@ -2,6 +2,10 @@
 # Kepp 3.x/2.x compatibility (except external modules)
 #
 
+# Python 2.5 compatibility
+
+from __future__ import with_statement
+
 from motion import *
 from sys import argv
 from glob import glob
@@ -23,7 +27,7 @@ max_error = 0.1
 files = sorted(glob(argv[1]))
 
 im1 = load_image(files[0])
-corners = detect_corners(im1.grayscale, 0.2, 200)
+corners = detect_corners(im1.grayscale, 0.3, 600)
 
 ftset = FeatureSet()
 ftset.trackers = corners
@@ -49,8 +53,8 @@ class WarpTool:
         
     def warp(self, filename, image, motion_mat=(1,0,0,1,0,0)):
         a,b,c,d,tx,ty = motion_mat
-        # Y-ayis is inverted between detector trackers output and cairo
-        # So I need to do manually this by swapping coefficients.
+        # I don't know the exact reason, but I've to swap x/y coordinates for
+        # a,b,c,d coeffiscients => this results to the swapping order here.
         mat = cairo.Matrix(d,c,b,a,tx,ty)
         mat.invert()
         self.global_mat = mat * self.global_mat
@@ -63,6 +67,7 @@ class WarpTool:
                                                      image.stride)
         self.cr.set_source_surface(surface, 0, 0)
         self.cr.paint()
+        
         print("Writing frame '%s'" % filename)
         self.target.write_to_png(filename)
 
@@ -118,15 +123,15 @@ def getError(model, p, e):
     ex = (model[0]*p[0] + model[1]*p[1] + model[4]) - e[0]
     ey = (model[2]*p[0] + model[3]*p[1] + model[5]) - e[1]
     return ex*ex + ey*ey
-    
-def computeScore(model, samples, threshold):
-    score = 0.0
+
+def getInliners(samples, model, threshold):
+    score = 0
     inliers = []
     for s in samples:
         err = getError(model, *s)
         if err < threshold:
-            inliers.append(s)
             score += err
+            inliers.append(s)
         else:
             score += threshold
     return score, inliers
@@ -173,18 +178,16 @@ with open(argv[2], 'w') as fp:
 
             # Compute the summed square error over all points for the model
             # and find the model giving the minimal value.
-            # Note: inliers_candidates will never be empty and should always contains
-            # best_inliers samples, as the model is comming from them (very little score).
-            score, inliers_candidates = computeScore(model, allsamples, threshold)
+            score, inliers = getInliners(allsamples, model, threshold)
             if score < best_score:
                 best_score = score
                 best_model = model
-                best_inliers = inliers_candidates
+                best_inliers = inliers
                 w = len(best_inliers) / float(len(allsamples))
                 if w < 1.0:
                     max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
                     max_iterations = min(max_iterations, max_max_iterations)
-
+        
         print("Frame %u: best err of %le over %u inliers (%u iterations)" % (i, best_score/len(allsamples), len(best_inliers), k))
         print("Frame %u: model=(%le, %le, %le, %le, %le, %le)" % ((i,)+best_model))
         fp.write("%le %le %le %le %le %le %u\n" % (best_model + (i,)))

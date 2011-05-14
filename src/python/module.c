@@ -39,6 +39,9 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 #if PY_MAJOR_VERSION < 3
 #define INITFUNC initmotion
+#if PY_MINOR_VERSION < 6
+#define Py_TYPE(x) ((x)->ob_type)
+#endif
 #else
 #define INITFUNC PyInit_motion
 #endif

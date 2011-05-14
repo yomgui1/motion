@@ -119,11 +119,12 @@ static int imt_png_load_from_file(const char *filename, IMT_Image **p_image, voi
 		
 		if (fmt == IMT_PIXFMT_RGB24)
         {
-#if	__BYTE_ORDER == __LITTLE_ENDIAN
+#if	BYTE_ORDER == LITTLE_ENDIAN
 			png_set_add_alpha(png_ptr, 0xff, PNG_FILLER_AFTER);
             png_set_bgr(png_ptr);
 #else
             png_set_add_alpha(png_ptr, 0xff, PNG_FILLER_BEFORE);
+            png_set_swap(png_ptr);
 #endif
         }
 		
