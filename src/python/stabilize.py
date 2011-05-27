@@ -3,7 +3,6 @@
 #
 
 # Python 2.5 compatibility
-
 from __future__ import with_statement
 
 from motion import *
@@ -11,10 +10,9 @@ from sys import argv
 from glob import glob
 from random import sample
 from math import log
+from warp import WarpTool
 
-import sys
-import os
-import cairo
+import sys, os
 
 # Value used to compute number of RANSAC iterations
 # Must be in [0, 1] range.
@@ -29,47 +27,12 @@ files = sorted(glob(argv[1]))
 im1 = load_image(files[0])
 corners = detect_corners(im1.grayscale, 0.3, 600)
 
+ctx = KLTContext()
 ftset = FeatureSet()
+
 ftset.trackers = corners
 del corners
-
 print("%u tracker(s) found." % len(ftset.trackers))
-
-ctx = KLTContext()
-
-class WarpTool:
-    def init_reference(self, image):
-        if image.format in (IMT_PIXFMT_RGB24, IMT_PIXFMT_ARGB32):
-            self.fmt = cairo.FORMAT_ARGB32
-        elif image.format == IMT_PIXFMT_GRAY8:
-            self.fmt = cairo.FORMAT_A8
-
-        width = image.width
-        height = image.height
-        
-        self.target = cairo.ImageSurface(self.fmt, width, height)
-        self.cr = cairo.Context(self.target)
-        self.global_mat = cairo.Matrix()
-        
-    def warp(self, filename, image, motion_mat=(1,0,0,1,0,0)):
-        a,b,c,d,tx,ty = motion_mat
-        # I don't know the exact reason, but I've to swap x/y coordinates for
-        # a,b,c,d coeffiscients => this results to the swapping order here.
-        mat = cairo.Matrix(d,c,b,a,tx,ty)
-        mat.invert()
-        self.global_mat = mat * self.global_mat
-        self.cr.set_matrix(self.global_mat)
-        
-        surface = cairo.ImageSurface.create_for_data(image.data,
-                                                     self.fmt,
-                                                     image.width,
-                                                     image.height,
-                                                     image.stride)
-        self.cr.set_source_surface(surface, 0, 0)
-        self.cr.paint()
-        
-        print("Writing frame '%s'" % filename)
-        self.target.write_to_png(filename)
 
 
 def solveAffineMatrix(samples):
@@ -107,9 +70,9 @@ def solveAffineMatrix(samples):
         
     den = (Vx02*YP01 - Vx01*YP02)
     if not (den and YP01 and px0):
-        return (1,0,0,1,0,0)
+        return
+    
     ty = (YE02*YP01 - YE01*YP02) / den
-    #tx = (XE02 - YP02*ex0) / (Vx02 - YP02) # see note2 below
     tx = (XE02*YP01 - XE01*YP02) / den
     
     d  = (YE01 - ty*Vx01) / YP01
@@ -170,11 +133,11 @@ with open(argv[2], 'w') as fp:
         max_iterations = max_max_iterations
         while k < max_iterations:
             k += 1
-            
-            best_inliers = sample(allsamples, min_samples)
-            
+
             # Compute a model list for current inliers
-            model = solveAffineMatrix(best_inliers)
+            model = None
+            while not model:
+                model = solveAffineMatrix(sample(allsamples, min_samples))
 
             # Compute the summed square error over all points for the model
             # and find the model giving the minimal value.
@@ -193,7 +156,7 @@ with open(argv[2], 'w') as fp:
         fp.write("%le %le %le %le %le %le %u\n" % (best_model + (i,)))
 
         filename = os.path.join(argv[3], "frame_%04u.png" % i)
-        warp.warp(filename, im2, best_model)
+        warp.warp(filename, im2, best_model, clear=True)
         
         ftset.trackers = ftset.estimations
         im1.flush()
