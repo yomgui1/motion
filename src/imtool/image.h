@@ -49,9 +49,11 @@ extern int IMT_AllocImage(
     void *data);
 extern void IMT_FlushImage(IMT_Image *image);
 extern void IMT_FreeImage(IMT_Image *image);
+extern void IMT_SwapAlpha(IMT_Image *image);
 extern int IMT_GenerateGrayscale(IMT_Image *src, int empty);
 //extern MAT_Matrix *IMT_GetFloatImage(IMT_Image *image);
 extern int IMT_FromFloatMatrix(IMT_Image *image, MAT_Matrix *floatmat);
+extern int IMT_FromFloatBuffer(IMT_Image *image, float *src);
 extern int IMT_AllocImageFromFloat(
     IMT_Image **p_image,
     IMT_Format format,

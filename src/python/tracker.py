@@ -52,7 +52,7 @@ for i in range(1, len(files)):
     im2 = load_image(files[i])
     ctx.track(im1, im2, ftset)
 
-    if not len(ftset.tracked):
+    if len(ftset.tracked) < 2:
         print "[STOP] trackers lost"
         break
 

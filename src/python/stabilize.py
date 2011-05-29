@@ -1,5 +1,5 @@
 #
-# Kepp 3.x/2.x compatibility (except external modules)
+# Keep 3.x/2.x compatibility (except external modules)
 #
 
 # Python 2.5 compatibility
@@ -8,7 +8,7 @@ from __future__ import with_statement
 from motion import *
 from sys import argv
 from glob import glob
-from random import sample
+from random import sample, shuffle
 from math import log
 from warp import WarpTool
 
@@ -17,15 +17,19 @@ import sys, os
 # Value used to compute number of RANSAC iterations
 # Must be in [0, 1] range.
 # Lower is, higher iterations will be.
-outliers_prob = 0.01
+outliers_prob = 0.05
 
 # maximal model average error on all trackers per frame
-max_error = 0.1
+max_error = .5
+
+good_fac = 0.5
+
+max_max_iterations = 1000
 
 files = sorted(glob(argv[1]))
 
 im1 = load_image(files[0])
-corners = detect_corners(im1.grayscale, 0.3, 600)
+corners = detect_corners(im1.grayscale, 0.3, 500)
 
 ctx = KLTContext()
 ftset = FeatureSet()
@@ -35,8 +39,8 @@ del corners
 print("%u tracker(s) found." % len(ftset.trackers))
 
 
-def solveAffineMatrix(samples):
-    """solveAffineMatrix(samples) -> err
+def solve2DAffineMatrix(samples):
+    """solve2DAffineMatrix(samples) -> err
     Solve the equation M.p = e for three (p, e) points in samples.
 
     M : is a 3x2 matrix, describing an affine transformation (model).
@@ -44,6 +48,9 @@ def solveAffineMatrix(samples):
     e : is an estimation of p.
     
     See notes below to know how this equations have been found.
+    Note also due to divisions during solving, p0 should not be at
+    coordinates (0,0) and points should not be colinears to not
+    divide by zero.
     """
 
     # Use first 3-points to compute basic matrix coeffiscients
@@ -68,10 +75,10 @@ def solveAffineMatrix(samples):
     XE02 = ex2*px0 - ex0*px2
     YE02 = ey2*px0 - ey0*px2
         
-    den = (Vx02*YP01 - Vx01*YP02)
-    if not (den and YP01 and px0):
-        return
-    
+    den = (Vx02*YP01 - Vx01*YP02) # 0 if px0 == 0
+    if not (den and YP01):
+		return
+
     ty = (YE02*YP01 - YE01*YP02) / den
     tx = (XE02*YP01 - XE01*YP02) / den
     
@@ -82,12 +89,78 @@ def solveAffineMatrix(samples):
 
     return (a,b,c,d,tx,ty)
         
+def solve3DAffineMatrix(samples):
+    # Use first 3-points to compute basic matrix coeffiscients
+    p1, e1 = samples[0]
+    p2, e2 = samples[1]
+    p3, e3 = samples[2]
+    p4, e4 = samples[3]
+    
+    X1, Y1 = p1
+    EX1, EY1 = e1
+    X2, Y2 = p2
+    EX2, EY2 = e2
+    X3, Y3 = p3
+    EX3, EY3 = e3
+    X4, Y4 = p4
+    EX4, EY4 = e4
+    
+    # All projected points at the focal distance
+    Z1=Z2=Z3=Z4=EZ1=EZ2=EZ3=EZ4=1.0
+
+    XY12 = X1*Y2 - Y1*X2
+    XY13 = X1*Y3 - Y1*X3
+    XY14 = X1*Y4 - Y1*X4
+    XZ12 = X1*Z2 - Z1*X2
+    XZ13 = X1*Z3 - Z1*X3
+    XZ14 = X1*Z4 - Z1*X4
+    EX12 = EX2*X1 - X2*EX1
+    EX13 = EX3*X1 - X2*EX1
+    EX14 = EX4*X1 - X2*EX1
+    EY12 = EY2*X1 - X2*EY1
+    EY13 = EY3*X1 - X3*EY1
+    EY14 = EY4*X1 - X4*EY1
+    EZ12 = EZ2*X1 - X2*EZ1
+    EZ13 = EZ3*X1 - X3*EZ1
+    EZ14 = EZ4*X1 - X4*EZ1
+    Vx12 = X1 - X2
+    Vx13 = X1 - X3
+    Vx14 = X1 - X4
+
+    XYZ123 = XY12*XZ13 - XZ12*XY13
+    XYZ124 = XY12*XZ14 - XZ12*XY14
+    XYZ1234 = XY12*XZ14 - XZ13*XY14
+    
+    #den1 = ((Vx14*XY12-XY14*Vx12)*(XZ13*XY12-XY13*XZ12)-(XZ14*XY12-XY14*XZ12)*(Vx13*XY12-XY13*Vx12))
+    #if not den1:
+    #    return None
+    
+    den_x = ((Vx12*XY12-XY14*Vx12)*XYZ123-XYZ124*(Vx12*XY12-XY13*Vx12))
+    if not den_x:
+        return None
+    
+    #z = ((EZ14*XY12-XY14*EZ12)*(XZ13*XY12-XY13*XZ12)-(XZ14*XY12-XY14*XZ12)*(EZ13*XY12-XY13*EZ12)) / den1
+    z = 0.0
+    y = ((EY14*XY12-XY14*EY12)*XZ13-XYZ1234*(EY13*XY12-XY13*EY12))/((Vx14*XY12-XY14*Vx12)*XZ13-XYZ1234*(Vx13*XY12-XY13*Vx12))
+    x = ((EX14*XY12-XY14*EX12)*XYZ123-XYZ124*(EX13*XY12-XY13*EX12)) / den_x
+    i = ((EZ13*XY12-XY13*EZ12) - z)/(XZ13*XY12-XY13*XZ12)
+    h = (EZ12 - i*XZ12 - z*Vx12)/XY12
+    g = (EZ1 - h*Y1- i*Z1 - z)/X1
+    f = ((EY13*XY12-XY13*EY12) - y*(Vx13*XY12-XY13*Vx12))/XZ13
+    e = (EY12 - f*XZ12 - y*Vx12)/XY12
+    d = (EY1 - e*Y1 - f*Z1 - y)/X1
+    c = ((EX13*XY12-XY13*EX12) - x*(Vx12*XY12-XY13*Vx12))/XYZ123
+    b = (EX12 - c*XZ12 - x*Vx12)/XY12
+    a = (EX1 - b*Y1 - c*Z1 - x)/X1
+    
+    return (a,b,c,d,e,f,g,h,i,x,y,z)
+        
 def getError(model, p, e):
-    ex = (model[0]*p[0] + model[1]*p[1] + model[4]) - e[0]
-    ey = (model[2]*p[0] + model[3]*p[1] + model[5]) - e[1]
+    ex = model[0]*p[0] + model[1]*p[1] + model[4] - e[0]
+    ey = model[2]*p[0] + model[3]*p[1] + model[5] - e[1]
     return ex*ex + ey*ey
 
-def getInliners(samples, model, threshold):
+def getScore(samples, model, threshold):
     score = 0
     inliers = []
     for s in samples:
@@ -100,7 +173,6 @@ def getInliners(samples, model, threshold):
     return score, inliers
 
 threshold = 2 * (max_error**2)
-max_max_iterations = 1000
 min_samples = 3
 
 warp = WarpTool()
@@ -113,7 +185,7 @@ with open(argv[2], 'w') as fp:
     for i in range(1, len(files)):
         # reset frame state variables
         best_score = 1e400 # inf for 64bits floating point
-        best_model = [1, 0, 0, 1, 0, 0]
+        best_model = None
 
         # load second image and track
         im2 = load_image(files[i])
@@ -121,7 +193,9 @@ with open(argv[2], 'w') as fp:
 
         # prepare samples
         allsamples = tuple(zip(ftset.tracked, ftset.estimations))
-        print("Frame %u: remains %u tracker(s)" % (i, len(allsamples)))
+        min_inliers = len(allsamples)*good_fac
+        
+        print("Frame %u: remains %u tracker(s), min_inliers=%u" % (i, len(allsamples), min_inliers))
 
         # enough trackers for solving?
         if min_samples > len(allsamples):
@@ -129,27 +203,40 @@ with open(argv[2], 'w') as fp:
             continue
         
         # Applying RANSAC algorithme to find the best model
-        k = 0
-        max_iterations = max_max_iterations
-        while k < max_iterations:
-            k += 1
+        min_inliers_frame = min_inliers
+        while not best_model:
+			k = 0
+			max_iterations = max_max_iterations
+			while k < max_iterations:
+			
+				# Compute a model for a random set of points
+				model = None
+				while not model:
+					model = solve2DAffineMatrix(sample(allsamples, min_samples))
 
-            # Compute a model list for current inliers
-            model = None
-            while not model:
-                model = solveAffineMatrix(sample(allsamples, min_samples))
+				# Compute the summed square error over all points for the model
+				# and find the model giving the minimal value.
+				score, inliers = getScore(allsamples, model, threshold)
+				if len(inliers) > min_inliers_frame and score < best_score:
+					best_score = score
+					best_model = model
+					best_inliers = inliers
+					w = len(best_inliers) / float(len(allsamples))
+					if w < 1.0:
+						max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
+						max_iterations = min(max_iterations, max_max_iterations)
 
-            # Compute the summed square error over all points for the model
-            # and find the model giving the minimal value.
-            score, inliers = getInliners(allsamples, model, threshold)
-            if score < best_score:
-                best_score = score
-                best_model = model
-                best_inliers = inliers
-                w = len(best_inliers) / float(len(allsamples))
-                if w < 1.0:
-                    max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
-                    max_iterations = min(max_iterations, max_max_iterations)
+				k += 1
+				
+			# when no model fit, try to decrease the number of requiered inliers per model
+			if not best_model:
+				if min_inliers_frame == min_samples:
+					best_model = (1,0,0,1,0,0)
+					best_score = threshold*len(allsamples)
+					best_inliers = min_samples
+					break
+				print("Frame %u: no suitable model found with a minimal of %u inliers, retrying with 10%% less..." % (i, min_inliers_frame))
+				min_inliers_frame *= 0.9 # 10% less
         
         print("Frame %u: best err of %le over %u inliers (%u iterations)" % (i, best_score/len(allsamples), len(best_inliers), k))
         print("Frame %u: model=(%le, %le, %le, %le, %le, %le)" % ((i,)+best_model))

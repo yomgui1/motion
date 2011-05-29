@@ -111,7 +111,7 @@ int IMT_GetBytesPerPixel(IMT_Format fmt)
         case IMT_PIXFMT_GRAYA16:
             return 2;
         case IMT_PIXFMT_RGB24:
-            return 4;
+            return 3;
         case IMT_PIXFMT_ARGB32:
             return 4;
 
@@ -128,7 +128,7 @@ int IMT_GetChannels(IMT_Format fmt)
         case IMT_PIXFMT_GRAYA16:
             return 2;
         case IMT_PIXFMT_RGB24:
-            return 4;
+            return 3;
         case IMT_PIXFMT_ARGB32:
             return 4;
 
@@ -250,6 +250,46 @@ int IMT_AllocImageFromFloat(
     return merge_from_float(*p_image, data);
 }
 
+void IMT_SwapAlpha(IMT_Image *image)
+{
+    unsigned int x,y;
+    
+    if (image->format == IMT_PIXFMT_GRAYA16)
+    {
+        for (y=0; y < image->height; y++)
+        {
+            unsigned char *dp = image->data + (y * image->stride);
+            
+            for (x=0; x < image->width; x++)
+            {
+                unsigned char tmp=dp[0];
+                
+                dp[0] = dp[1];
+                dp[1] = tmp;
+
+                dp += 2;
+            }
+        }
+    }
+    else if (image->format == IMT_PIXFMT_ARGB32)
+    {
+        for (y=0; y < image->height; y++)
+        {
+            unsigned char *dp = image->data + (y * image->stride);
+            
+            for (x=0; x < image->width; x++)
+            {
+                unsigned char tmp=dp[0];
+                
+                dp[0] = dp[3];
+                dp[3] = tmp;
+
+                dp += 4;
+            }
+        }
+    }
+}
+
 int IMT_GenerateGrayscale(IMT_Image *src, int empty)
 {
 	unsigned int y, i;
@@ -269,7 +309,7 @@ int IMT_GenerateGrayscale(IMT_Image *src, int empty)
 	
 	switch(src->format)
 	{
-		case IMT_PIXFMT_RGB24: /* 32bits quantities but high byte not used */
+		case IMT_PIXFMT_RGB24:
 			for (y=0; y < src->height; y++)
 			{
 				for (i=0; i < src->stride; i += src->bpp)
@@ -277,9 +317,9 @@ int IMT_GenerateGrayscale(IMT_Image *src, int empty)
 					unsigned char *pixel = src->data + (y*src->stride + i);
 					unsigned int sum;
 					
-					sum  = pixel[1]*6969ul;
-					sum += pixel[2]*23434ul;
-					sum += pixel[3]*2365ul;
+					sum  = pixel[0]*6969ul;
+					sum += pixel[1]*23434ul;
+					sum += pixel[2]*2365ul;
 					
 					pix_dst[0] = sum / 8355840.;
 					pix_dst++;
@@ -449,6 +489,11 @@ MAT_Matrix *IMT_GetFloatImage(IMT_Image *image)
 int IMT_FromFloatMatrix(IMT_Image *image, MAT_Matrix *floatmat)
 {
     return merge_from_float(image, floatmat->array.data.float_ptr);
+}
+
+int IMT_FromFloatBuffer(IMT_Image *image, float *src)
+{
+    return merge_from_float(image, src);
 }
 
 int IMT_ImageConvolve(MAT_Array *kernel, IMT_Image *input, IMT_Image *output)

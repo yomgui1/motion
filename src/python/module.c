@@ -62,11 +62,13 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 #define ADD_TYPE(m, s, t) {Py_INCREF(t); PyModule_AddObject(m, s, (PyObject *)(t));}
 
-#define PyImage_Check(op) PyObject_TypeCheck(op, &PyImageType)
-#define PyImage_CheckExact(op) ((op)->ob_type == &PyImageType)
+#define PyArray_Check(op) PyObject_TypeCheck(op, &PyArrayType)
+#define PyArray_CheckExact(op) ((op)->ob_type == &PyArrayType)
 
-#define PyFeatureSet_Check(op) PyObject_TypeCheck(op, &PyFeatureSetType)
-#define PyFeatureSet_CheckExact(op) ((op)->ob_type == &PyFeatureSetType)
+#define PyMatrix_Check(op) PyObject_TypeCheck(op, &PyMatrixType)
+#define PyMatrix_CheckExact(op) ((op)->ob_type == &PyMatrixType)
+
+#define OBJ_TNAME(o) (Py_TYPE(o)->tp_name)
 
 #ifdef __ONLY_A_TEMPLATE__
 #define PyXXX_Check(op) PyObject_TypeCheck(op, &PyXXX_Type)
@@ -175,7 +177,8 @@ static PyTypeObject PyXXX_Type = {
 ** PyImageType
 */
 
-typedef struct PyImage_STRUCT {
+typedef struct PyImage_STRUCT
+{
     PyObject_HEAD
 
     IMT_Image *image;
@@ -187,20 +190,17 @@ static PyObject *
 image_new(PyTypeObject *type, PyObject *args)
 {
     PyImage *self;
-    unsigned int fmt, width, height, stride=0;
+    unsigned int fmt, width, height, padding=0;
     char *data=NULL;
     Py_ssize_t length;
 
-    if (!PyArg_ParseTuple(args, "III|Is#:Image", &fmt, &width, &height, &stride, &data, &length)) /* BR */
+    if (!PyArg_ParseTuple(args, "III|Is#:Image", &fmt, &width, &height, &padding, &data, &length)) /* BR */
         return NULL;
-
-    if (stride == 0)
-        stride = width * IMT_GetBytesPerPixel(fmt);
 
     self = (PyImage*)type->tp_alloc(type, 0); /* NR */
     if (NULL != self)
     {
-        int err = IMT_AllocImage(&self->image, fmt, width, height, stride, data);
+        int err = IMT_AllocImage(&self->image, fmt, width, height, padding, data);
         if (!err)
             return (PyObject *)self;
         else
@@ -225,6 +225,13 @@ static PyObject *
 image_flush(PyImage *self)
 {
     IMT_FlushImage(self->image);
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+image_swap_alpha(PyImage *self)
+{
+    IMT_SwapAlpha(self->image);
     Py_RETURN_NONE;
 }
 
@@ -303,13 +310,52 @@ image_get_data(PyImage *self, void *closure)
 #endif
 }
 
-static PyGetSetDef image_getseters[] = {
+static int
+image_set_data_float(PyImage *self, PyObject *obj, void *closure)
+{
+#if PY_MAJOR_VERSION < 3
+#error not supported yet
+#else
+    Py_buffer buf;
+    int err;
+
+    if (NULL == obj) return 0;
+
+    if (PyObject_GetBuffer(obj, &buf, PyBUF_SIMPLE))
+    {
+        PyErr_Format(PyExc_TypeError, "Accept only simple buffer object, not %s", OBJ_TNAME(obj));
+        return 1;
+    }
+
+    if (buf.len < (sizeof(float)*self->image->bpp*self->image->height))
+    {
+        PyErr_SetString(PyExc_TypeError, "Too small buffer");
+        return 1;
+    }
+    
+    err = IMT_FromFloatBuffer(self->image, buf.buf);
+    if (err)
+    {
+        PyErr_Format(PyExc_SystemError,
+                     "IMT_FromFloatBuffer failed, reason: %s",
+                     IMT_GetErrorString(err));
+        return 1;
+    }
+
+    PyBuffer_Release(&buf);
+    return 0;
+#endif
+}
+
+static PyGetSetDef image_getseters[] =
+{
     {"grayscale", (getter)image_get_grayscale, NULL, "Return grayscale version of the image as a new Image object.", NULL},
     {"format", (getter)image_get_prop, NULL, "Return image format", (void*)0},
     {"width", (getter)image_get_prop, NULL, "Return image width", (void*)1},
     {"height", (getter)image_get_prop, NULL, "Return image height", (void*)2},
     {"stride", (getter)image_get_prop, NULL, "Return image stride", (void*)3},
     {"data", (getter)image_get_data, NULL, "Return data as byte buffer", NULL},
+    {"floatdata", (getter)NULL, (setter)image_set_data_float, "Set data from a float buffer", NULL},
     {NULL} /* sentinel */
 };
 
@@ -317,6 +363,7 @@ static struct PyMethodDef image_methods[] =
 {
     {"flush", (PyCFunction)image_flush, METH_NOARGS, NULL},
     {"save", (PyCFunction)image_save, METH_VARARGS, NULL},
+    {"swap_alpha", (PyCFunction)image_swap_alpha, METH_NOARGS, NULL},
     {NULL} /* sentinel */
 };
 
@@ -339,7 +386,8 @@ static PyTypeObject PyImageType =
 ** PyFeatureSetType
 */
 
-typedef struct PyFeatureSet_STRUCT {
+typedef struct PyFeatureSet_STRUCT
+{
     PyObject_HEAD
 
     KLT_FeatureSet ftset;
@@ -368,7 +416,6 @@ ftset_dealloc(PyFeatureSet *self)
     PyMem_Free(self->ftset.features);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
-
 
 static PyObject *
 ftset_flush(PyFeatureSet *self, PyObject *args)
@@ -401,7 +448,8 @@ ftset_get_positions(PyFeatureSet *self, void *closure)
 			if (closure && (self->ftset.features[i].status != KLT_TRACKED)) continue;
 
             PyTuple_SET_ITEM(result, k++,
-                             Py_BuildValue("ff",
+                             Py_BuildValue("Iiff", i,
+                                           self->ftset.features[i].status,
                                            self->ftset.features[i].position.x,
                                            self->ftset.features[i].position.y));
 		}
@@ -478,7 +526,7 @@ ftset_get_estimations(PyFeatureSet *self, void *closure)
             if (self->ftset.features[i].status != KLT_TRACKED) continue;
 
             PyTuple_SET_ITEM(result, k++,
-                             Py_BuildValue("ff",
+                             Py_BuildValue("Iff", i,
                                            self->ftset.features[i].estimation.x,
                                            self->ftset.features[i].estimation.y));
         }
@@ -487,7 +535,8 @@ ftset_get_estimations(PyFeatureSet *self, void *closure)
     return result;
 }
 
-static PyGetSetDef ftset_getseters[] = {
+static PyGetSetDef ftset_getsetters[] =
+{
     {"trackers", (getter)ftset_get_positions, (setter)ftset_set_positions, "Tuple of all features positions.", (void *)0},
     {"tracked", (getter)ftset_get_positions, NULL, "Tuple of positions of only tracked features.", (void *)1},
     {"estimations", (getter)ftset_get_estimations, NULL, "Tuple of estimation of only tracked features.", (void *)0},
@@ -512,14 +561,15 @@ static PyTypeObject PyFeatureSetType =
     tp_new          : (newfunc)ftset_new,
     tp_dealloc      : (destructor)ftset_dealloc,
     tp_methods      : ftset_methods,
-    tp_getset       : ftset_getseters,
+    tp_getset       : ftset_getsetters,
 };
 
 /*******************************************************************************************
 ** PyKLTContextType
 */
 
-typedef struct PyKLTContext_STRUCT {
+typedef struct PyKLTContext_STRUCT
+{
     PyObject_HEAD
 
     KLT_Context ctx;
@@ -591,6 +641,461 @@ static PyTypeObject PyKLTContextType =
 
     tp_new          : (newfunc)kltctx_new,
     tp_methods      : kltctx_methods,
+};
+
+/*******************************************************************************************
+** PyArrayType
+*/
+
+typedef struct PyArray_STRUCT
+{
+    PyObject_HEAD
+
+    MAT_Array *array;
+} PyArray;
+
+static PyTypeObject PyArrayType;
+
+static PyObject *_array_new(MAT_Array *array)
+{
+	PyArray *obj;
+	
+	obj = PyObject_New(PyArray, &PyArrayType);
+	if (obj)
+		obj->array = array;
+	return (PyObject *)obj;
+}
+
+static MAT_Array *_array_from_sequence(int type, PyObject *seq)
+{
+	int n;
+		
+	n = PySequence_Fast_GET_SIZE(seq);
+	if (n > 0)
+	{
+		PyObject **items = PySequence_Fast_ITEMS(seq);
+		MAT_Vector *vec;
+		
+		vec = MAT_AllocArray(n, type, 0, NULL);
+		if (NULL != vec)
+		{
+#define SET_ARRAY_VALUES(T, array) \
+{ \
+	T *ptr = array->data.T##_ptr; \
+	while (n--) *ptr++ = PyFloat_AsDouble(*items++); \
+}
+			switch (type)
+			{
+				case MAT_TYPE_FLOAT:
+					SET_ARRAY_VALUES(float, vec);
+					break;
+
+				case MAT_TYPE_DOUBLE:
+					SET_ARRAY_VALUES(double, vec);
+					break;
+			}
+			
+			return vec;
+		}
+		else
+			PyErr_SetString(PyExc_MemoryError, "Unable to alloc internal vector");
+	}
+	else
+		PyErr_SetString(PyExc_TypeError, "Can't create array from empty sequence");
+
+	return NULL;
+}
+
+static PyObject *
+array_new(PyTypeObject *type, PyObject *args)
+{
+    PyArray *self;
+    unsigned int width, arraytype;
+
+	if (!PyArg_ParseTuple(args, "II", &width, &arraytype))
+		return NULL;
+
+    self = (PyArray*)type->tp_alloc(type, 0); /* NR */
+    if (NULL != self)
+    {
+		self->array = MAT_AllocArray(width, arraytype, 0, NULL);
+		if (NULL == self->array)
+			Py_CLEAR(self);
+	}
+
+    return (PyObject *)self;
+}
+
+static void
+array_dealloc(PyArray *self)
+{
+    MAT_FreeArray(self->array);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *
+array_zero(PyArray *self)
+{
+    MAT_ZeroArray(self->array);
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+array_get_data(PyArray *self, void *closure)
+{
+	PyObject *data = PyTuple_New(self->array->width);
+	int i;
+	
+	if (NULL != data)
+	{
+		for (i=0; i < self->array->width; i++)
+		{
+			PyObject *value;
+			
+			switch (self->array->type)
+			{
+				case MAT_TYPE_FLOAT:
+					value = PyFloat_FromDouble(self->array->data.float_ptr[i]);
+					break;
+
+				case MAT_TYPE_DOUBLE:
+					value = PyFloat_FromDouble(self->array->data.double_ptr[i]);
+					break;
+				
+				default: value = NULL;
+			}
+			
+			if (NULL == value)
+			{
+				Py_DECREF(data);
+				return NULL;
+			}
+			
+			PyTuple_SET_ITEM(data, i, value);
+		}
+	}
+		
+	return data;
+}
+
+static int
+array_set_data(PyArray *self, PyObject *value, void *closure)
+{
+	PyObject *fast;
+	int n, res;
+	
+	if (NULL == value)
+	{
+		MAT_ZeroArray(self->array);
+		return 0;
+	}
+	
+	fast = PySequence_Fast(value, "argument is not convertible into tuple or list"); /* NR */
+	if (NULL == fast)
+		return NULL;
+			
+	n = PySequence_Fast_GET_SIZE(fast);
+	if (n == self->array->width)
+	{
+		PyObject **items = PySequence_Fast_ITEMS(fast);
+		
+		switch (self->array->type)
+		{
+			case MAT_TYPE_FLOAT:
+				SET_ARRAY_VALUES(float, self->array);
+				break;
+
+			case MAT_TYPE_DOUBLE:
+				SET_ARRAY_VALUES(double, self->array);
+				break;
+		}
+		
+		res = 0;
+	}
+	else
+		PyErr_SetString(PyExc_TypeError, "Size incompatible array for this matrix");
+	
+	Py_DECREF(fast);
+	return res;
+}
+
+static struct PyMethodDef array_methods[] =
+{
+    {"zero", (PyCFunction)array_zero, METH_NOARGS, NULL},
+    {NULL} /* sentinel */
+};
+
+static PyGetSetDef array_getsetters[] =
+{
+    {"data", (getter)array_get_data, (setter)array_set_data, "Array coefficients as tuple of float.", (void *)0},
+    {NULL} /* sentinel */
+};
+
+static PyTypeObject PyArrayType =
+{
+    PyObject_HEAD_INIT(NULL)
+
+    tp_name         : MODNAME ".Array",
+    tp_basicsize    : sizeof(PyArray),
+    tp_flags        : Py_TPFLAGS_DEFAULT,
+    tp_doc          : "Array Objects",
+
+    tp_new          : (newfunc)array_new,
+    tp_dealloc      : (destructor)array_dealloc,
+    tp_methods      : array_methods,
+    tp_getset       : array_getsetters,
+};
+
+/*******************************************************************************************
+** PyMatrixType
+*/
+
+typedef struct PyMatrix_STRUCT
+{
+    PyObject_HEAD
+
+	unsigned int nrows, ncols;
+    MAT_Matrix *matrix;
+} PyMatrix;
+
+static PyTypeObject PyMatrixType;
+
+static PyObject *_matrix_new(MAT_Matrix *mat)
+{
+	PyMatrix *obj;
+	
+	obj = PyObject_New(PyMatrix, &PyMatrixType);
+	if (obj)
+		obj->matrix = mat;
+	return (PyObject *)obj;
+}
+
+static PyObject *
+matrix_new(PyTypeObject *type, PyObject *args)
+{
+    PyMatrix *self;
+    unsigned int ncols, nrows, mattype;
+
+	if (!PyArg_ParseTuple(args, "III", &nrows, &ncols, &mattype))
+		return NULL;
+
+    self = (PyMatrix*)type->tp_alloc(type, 0); /* NR */
+    if (NULL != self)
+    {
+		self->matrix = MAT_AllocMatrix(nrows, ncols, mattype, 0, NULL);
+		if (NULL != self->matrix)
+		{
+			self->nrows = nrows;
+			self->ncols = ncols;
+			MAT_SetIdentityMatrix(self->matrix);
+		}
+		else
+			Py_CLEAR(self);
+	}
+
+    return (PyObject *)self;
+}
+
+static void
+matrix_dealloc(PyMatrix *self)
+{
+    MAT_FreeMatrix(self->matrix);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject *
+matrix_identity(PyMatrix *self)
+{
+    MAT_SetIdentityMatrix(self->matrix);
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+matrix_zero(PyMatrix *self)
+{
+    MAT_ZeroMatrix(self->matrix);
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+matrix_transpose(PyMatrix *self)
+{
+	MAT_InPlaceTransposeMatrix(self->matrix);
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+matrix_multiply(PyMatrix *self, PyObject *args)
+{
+	PyObject *obj;
+	
+	if (!PyArg_ParseTuple(args, "O", &obj))
+		return NULL;
+		
+	if (PyMatrix_CheckExact(obj))
+	{
+		MAT_Matrix *res = MAT_MultiplyMatrix(((PyMatrix *)obj)->matrix, self->matrix);
+		if (NULL == res)
+		{
+			PyErr_SetString(PyExc_RuntimeError, "Failed to multiply matrices");
+			return NULL;
+		}
+		
+		return _matrix_new(res);
+	}
+	else if (PyArray_CheckExact(obj))
+	{
+		MAT_Vector *res = MAT_MultiplyMatrixVector(self->matrix, ((PyArray *)obj)->array);
+		if (NULL == res)
+		{
+			PyErr_SetString(PyExc_RuntimeError, "Failed to multiply matrix with an array");
+			return NULL;
+		}
+		
+		return _array_new(res);
+	}
+	else if (PyNumber_Check(obj))
+	{
+		MAT_Matrix *res;
+		
+		obj = PyNumber_Float(obj); /* NR */
+		if (NULL == obj)
+			return NULL;
+
+		res = MAT_ScalarMultiplyMatrix(PyFloat_AS_DOUBLE(obj), self->matrix);
+		Py_DECREF(obj);
+		return _matrix_new(res);
+	}
+	else
+	{
+		MAT_Vector *vec;
+		PyObject *fast, *pyres=NULL;
+		int n;
+		
+		fast = PySequence_Fast(obj, "argument is not convertible into tuple or list"); /* NR */
+		if (NULL == fast)
+			return NULL;
+			
+		n = PySequence_Fast_GET_SIZE(fast);
+		if (n == self->ncols)
+		{
+			vec = _array_from_sequence(self->matrix->array.type, fast);
+			if (NULL != vec)
+			{
+				MAT_Vector *res = MAT_MultiplyMatrixVector(self->matrix, vec);
+				
+				if (NULL != res)
+					pyres = _array_new(res); /* NR */
+				else
+					PyErr_SetString(PyExc_RuntimeError, "Failed to multiply matrix with a vector");
+					
+				MAT_FreeArray(vec);
+			}
+		}
+		else
+			PyErr_Format(PyExc_TypeError, "Input sequence must contains %u items", self->matrix->ncols);
+			
+		Py_DECREF(fast);
+		return pyres;
+	}
+
+	PyErr_SetString(PyExc_TypeError, "can multiply a matrix only with a matrix, a vector or a float");
+	return NULL;
+}
+
+static PyObject *
+matrix_get_array(PyMatrix *self, void *closure)
+{
+	MAT_Array *array = MAT_AllocArray(self->ncols*self->nrows, self->matrix->array.type, 0, self->matrix->array.data.void_ptr);
+	
+	if (NULL != array)
+		return _array_new(array);
+	
+	PyErr_SetString(PyExc_MemoryError, "Failed to create array");
+	return NULL;
+}
+
+static int
+matrix_set_array(PyMatrix *self, PyObject *value, void *closure)
+{
+	PyObject *fast;
+	int n, res;
+	
+	if (NULL == value)
+	{
+		MAT_ZeroMatrix(self->matrix);
+		return 0;
+	}
+	
+	fast = PySequence_Fast(value, "argument is not convertible into tuple or list"); /* NR */
+	if (NULL == fast)
+		return NULL;
+			
+	n = PySequence_Fast_GET_SIZE(fast);
+	if (n == self->matrix->array.width)
+	{
+		PyObject **items = PySequence_Fast_ITEMS(fast);
+#define SET_MATRIX_VALUES(T) \
+{ \
+	T *ptr = self->matrix->array.data.T##_ptr; \
+	while (n--) *ptr++ = PyFloat_AsDouble(*items++); \
+}
+		switch (self->matrix->array.type)
+		{
+			case MAT_TYPE_FLOAT:
+				SET_MATRIX_VALUES(float);
+				break;
+
+			case MAT_TYPE_DOUBLE:
+				SET_MATRIX_VALUES(double);
+				break;
+		}
+		
+		res = 0;
+	}
+	else
+		PyErr_SetString(PyExc_TypeError, "Size incompatible array for this matrix");
+	
+	Py_DECREF(fast);
+	return res;
+}
+
+static struct PyMethodDef matrix_methods[] =
+{
+    {"zero", (PyCFunction)matrix_zero, METH_NOARGS, NULL},
+    {"identity", (PyCFunction)matrix_identity, METH_NOARGS, NULL},
+    {"transpose", (PyCFunction)matrix_transpose, METH_NOARGS, NULL},
+    {"multiply", (PyCFunction)matrix_multiply, METH_VARARGS, NULL},
+    {NULL} /* sentinel */
+};
+
+static PyGetSetDef matrix_getsetters[] =
+{
+    {"array", (getter)matrix_get_array, (setter)matrix_set_array, "Matrix coefficients as flat array.", (void *)0},
+    {NULL} /* sentinel */
+};
+
+static PyMemberDef matrix_members[] =
+{
+    {"nrows", T_ULONG, offsetof(PyMatrix, nrows), READONLY, NULL},
+    {"ncols", T_ULONG, offsetof(PyMatrix, ncols), READONLY, NULL},
+    {NULL} /* sentinel */
+};
+
+static PyTypeObject PyMatrixType =
+{
+    PyObject_HEAD_INIT(NULL)
+
+    tp_name         : MODNAME ".Matrix",
+    tp_basicsize    : sizeof(PyMatrix),
+    tp_flags        : Py_TPFLAGS_DEFAULT,
+    tp_doc          : "Matrix Objects",
+
+    tp_new          : (newfunc)matrix_new,
+    tp_dealloc      : (destructor)matrix_dealloc,
+    tp_methods      : matrix_methods,
+    tp_members      : matrix_members,
+    tp_getset       : matrix_getsetters,
 };
 
 /*******************************************************************************************
@@ -685,7 +1190,8 @@ motion_detect_corners(PyObject *self, PyObject *args)
     return result;
 }
 
-static PyMethodDef methods[] = {
+static PyMethodDef methods[] =
+{
     {"load_image", (PyCFunction)motion_load_image, METH_VARARGS, NULL},
     {"detect_corners", (PyCFunction)motion_detect_corners, METH_VARARGS, NULL},
     {NULL} /* sentinel */
@@ -698,6 +1204,14 @@ static int add_constants(PyObject *m)
     INSI(m, "IMT_PIXFMT_GRAYA16", IMT_PIXFMT_GRAYA16);
     INSI(m, "IMT_PIXFMT_RGB24", IMT_PIXFMT_RGB24);
     INSI(m, "IMT_PIXFMT_ARGB32", IMT_PIXFMT_ARGB32);
+    INSI(m, "MAT_TYPE_FLOAT", MAT_TYPE_FLOAT);
+    INSI(m, "MAT_TYPE_DOUBLE", MAT_TYPE_DOUBLE);
+    INSI(m, "KLT_TRACKED", KLT_TRACKED);
+    INSI(m, "KLT_NOT_FOUND", KLT_NOT_FOUND);
+    INSI(m, "KLT_SMALL_DET", KLT_SMALL_DET);
+    INSI(m, "KLT_MAX_ITERATIONS", KLT_MAX_ITERATIONS);
+    INSI(m, "KLT_OOB", KLT_OOB);
+    INSI(m, "KLT_LARGE_RESIDUE", KLT_LARGE_RESIDUE);
 
     return 0;
 }
@@ -723,17 +1237,24 @@ INITFUNC(void)
     if (!PyType_Ready(&PyImageType)) {
         if (!PyType_Ready(&PyFeatureSetType)) {
             if (!PyType_Ready(&PyKLTContextType)) {
+				if (!PyType_Ready(&PyMatrixType)) {
+					if (!PyType_Ready(&PyArrayType)) {
 #if PY_MAJOR_VERSION < 3
-                m = Py_InitModule(MODNAME, methods);
+						m = Py_InitModule(MODNAME, methods);
 #else
-                m = PyModule_Create(&motionmodule);
+						m = PyModule_Create(&motionmodule);
 #endif
-                if (m) {
-                    add_constants(m);
+						if (m) {
+							add_constants(m);
 
-                    ADD_TYPE(m, "Image", &PyImageType);
-                    ADD_TYPE(m, "FeatureSet", &PyFeatureSetType);
-                    ADD_TYPE(m, "KLTContext", &PyKLTContextType);
+							ADD_TYPE(m, "Image", &PyImageType);
+							ADD_TYPE(m, "FeatureSet", &PyFeatureSetType);
+							ADD_TYPE(m, "KLTContext", &PyKLTContextType);
+							ADD_TYPE(m, "Array", &PyArrayType);
+							ADD_TYPE(m, "Vector", &PyArrayType); /* Alias */
+							ADD_TYPE(m, "Matrix", &PyMatrixType);
+						}
+					}
                 }
             }
         }

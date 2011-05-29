@@ -4,6 +4,9 @@
 /* WARNING: unsafe macro */
 #define MAT_SAMEARRAYTYPE(left, right) (((left)->type == (right)->type) && ((left)->width == (right)->width))
 
+#define MAT_TYPE_FLOAT MAT_ARRAYTYPE_FLOAT
+#define MAT_TYPE_DOUBLE MAT_ARRAYTYPE_DOUBLE
+
 enum
 {
     MAT_ARRAYTYPE_FLOAT=0,

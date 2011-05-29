@@ -2,6 +2,7 @@
 #define MAT_MATRIX_H
 
 #include <math/array.h>
+#include <math/vector.h>
 
 /* WARNING: unsafe macro */
 #define MAT_SAMEMATRIXTYPE(left, right) MAT_SAMEARRAYTYPE((MAT_Array *)(left), (MAT_Array *)(right))
@@ -31,7 +32,15 @@ extern MAT_Matrix *MAT_AllocMatrix(
     MAT_Array *data);
 extern MAT_Matrix *MAT_AllocMatrixLike(const MAT_Matrix *friend, int copydata);
 extern void MAT_FreeMatrix(MAT_Matrix *mat);
-extern void MAT_ZeroMat(MAT_Matrix *mat);
-extern void MAT_SetIdentity(MAT_Matrix *mat);
+extern void MAT_ZeroMatrix(MAT_Matrix *mat);
+extern void MAT_SetIdentityMatrix(MAT_Matrix *mat);
+extern void MAT_InPlaceTransposeMatrix(MAT_Matrix *mat);
+extern MAT_Matrix *MAT_TransposeMatrix(MAT_Matrix *mat);
+extern void MAT_InPlaceScalarMultiplyMatrix(double value, MAT_Matrix *mat);
+extern MAT_Matrix *MAT_ScalarMultiplyMatrix(double value, MAT_Matrix *mat);
+extern int MAT_InPlaceMultiplyMatrix(MAT_Matrix *mat1, MAT_Matrix *mat2);
+extern MAT_Matrix *MAT_MultiplyMatrix(MAT_Matrix *mat1, MAT_Matrix *mat2);
+extern int MAT_InPlaceMultiplyMatrixVector(MAT_Matrix *mat, MAT_Vector *vec);
+extern MAT_Vector *MAT_MultiplyMatrixVector(MAT_Matrix *mat, MAT_Vector *vec);
 
 #endif /* MAT_MATRIX_H */
