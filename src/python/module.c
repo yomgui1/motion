@@ -792,7 +792,7 @@ array_set_data(PyArray *self, PyObject *value, void *closure)
 	
 	fast = PySequence_Fast(value, "argument is not convertible into tuple or list"); /* NR */
 	if (NULL == fast)
-		return NULL;
+		return 1;
 			
 	n = PySequence_Fast_GET_SIZE(fast);
 	if (n == self->array->width)
@@ -1029,7 +1029,7 @@ matrix_set_array(PyMatrix *self, PyObject *value, void *closure)
 	
 	fast = PySequence_Fast(value, "argument is not convertible into tuple or list"); /* NR */
 	if (NULL == fast)
-		return NULL;
+		return 1;
 			
 	n = PySequence_Fast_GET_SIZE(fast);
 	if (n == self->matrix->array.width)
