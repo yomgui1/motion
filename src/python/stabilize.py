@@ -87,77 +87,11 @@ def solve2DAffineMatrix(samples):
     b  = (XE01 - tx*Vx01) / YP01
     a  = (ex0 - b*py0 - tx) / px0
 
-    return (a,b,c,d,tx,ty)
-        
-def solve3DAffineMatrix(samples):
-    # Use first 3-points to compute basic matrix coeffiscients
-    p1, e1 = samples[0]
-    p2, e2 = samples[1]
-    p3, e3 = samples[2]
-    p4, e4 = samples[3]
-    
-    X1, Y1 = p1
-    EX1, EY1 = e1
-    X2, Y2 = p2
-    EX2, EY2 = e2
-    X3, Y3 = p3
-    EX3, EY3 = e3
-    X4, Y4 = p4
-    EX4, EY4 = e4
-    
-    # All projected points at the focal distance
-    Z1=Z2=Z3=Z4=EZ1=EZ2=EZ3=EZ4=1.0
-
-    XY12 = X1*Y2 - Y1*X2
-    XY13 = X1*Y3 - Y1*X3
-    XY14 = X1*Y4 - Y1*X4
-    XZ12 = X1*Z2 - Z1*X2
-    XZ13 = X1*Z3 - Z1*X3
-    XZ14 = X1*Z4 - Z1*X4
-    EX12 = EX2*X1 - X2*EX1
-    EX13 = EX3*X1 - X2*EX1
-    EX14 = EX4*X1 - X2*EX1
-    EY12 = EY2*X1 - X2*EY1
-    EY13 = EY3*X1 - X3*EY1
-    EY14 = EY4*X1 - X4*EY1
-    EZ12 = EZ2*X1 - X2*EZ1
-    EZ13 = EZ3*X1 - X3*EZ1
-    EZ14 = EZ4*X1 - X4*EZ1
-    Vx12 = X1 - X2
-    Vx13 = X1 - X3
-    Vx14 = X1 - X4
-
-    XYZ123 = XY12*XZ13 - XZ12*XY13
-    XYZ124 = XY12*XZ14 - XZ12*XY14
-    XYZ1234 = XY12*XZ14 - XZ13*XY14
-    
-    #den1 = ((Vx14*XY12-XY14*Vx12)*(XZ13*XY12-XY13*XZ12)-(XZ14*XY12-XY14*XZ12)*(Vx13*XY12-XY13*Vx12))
-    #if not den1:
-    #    return None
-    
-    den_x = ((Vx12*XY12-XY14*Vx12)*XYZ123-XYZ124*(Vx12*XY12-XY13*Vx12))
-    if not den_x:
-        return None
-    
-    #z = ((EZ14*XY12-XY14*EZ12)*(XZ13*XY12-XY13*XZ12)-(XZ14*XY12-XY14*XZ12)*(EZ13*XY12-XY13*EZ12)) / den1
-    z = 0.0
-    y = ((EY14*XY12-XY14*EY12)*XZ13-XYZ1234*(EY13*XY12-XY13*EY12))/((Vx14*XY12-XY14*Vx12)*XZ13-XYZ1234*(Vx13*XY12-XY13*Vx12))
-    x = ((EX14*XY12-XY14*EX12)*XYZ123-XYZ124*(EX13*XY12-XY13*EX12)) / den_x
-    i = ((EZ13*XY12-XY13*EZ12) - z)/(XZ13*XY12-XY13*XZ12)
-    h = (EZ12 - i*XZ12 - z*Vx12)/XY12
-    g = (EZ1 - h*Y1- i*Z1 - z)/X1
-    f = ((EY13*XY12-XY13*EY12) - y*(Vx13*XY12-XY13*Vx12))/XZ13
-    e = (EY12 - f*XZ12 - y*Vx12)/XY12
-    d = (EY1 - e*Y1 - f*Z1 - y)/X1
-    c = ((EX13*XY12-XY13*EX12) - x*(Vx12*XY12-XY13*Vx12))/XYZ123
-    b = (EX12 - c*XZ12 - x*Vx12)/XY12
-    a = (EX1 - b*Y1 - c*Z1 - x)/X1
-    
-    return (a,b,c,d,e,f,g,h,i,x,y,z)
+    return (a,c,b,d,tx,ty)
         
 def getError(model, p, e):
-    ex = model[0]*p[0] + model[1]*p[1] + model[4] - e[0]
-    ey = model[2]*p[0] + model[3]*p[1] + model[5] - e[1]
+    ex = model[0]*p[0] + model[2]*p[1] + model[4] - e[0]
+    ey = model[1]*p[0] + model[3]*p[1] + model[5] - e[1]
     return ex*ex + ey*ey
 
 def getScore(samples, model, threshold):
@@ -192,7 +126,8 @@ with open(argv[2], 'w') as fp:
         ctx.track(im1, im2, ftset)
 
         # prepare samples
-        allsamples = tuple(zip(ftset.tracked, ftset.estimations))
+        estimations = tuple(t[-2:] for t in ftset.estimations)
+        allsamples = tuple(zip((t[-2:] for t in ftset.tracked), estimations))
         min_inliers = len(allsamples)*good_fac
         
         print("Frame %u: remains %u tracker(s), min_inliers=%u" % (i, len(allsamples), min_inliers))
@@ -245,9 +180,11 @@ with open(argv[2], 'w') as fp:
         filename = os.path.join(argv[3], "frame_%04u.png" % i)
         warp.warp(filename, im2, best_model, clear=True)
         
-        ftset.trackers = ftset.estimations
+        ftset.trackers = estimations
         im1.flush()
         im1 = im2
+
+warp.print_crop()
 
 """
 Notes:
@@ -462,6 +399,6 @@ c  = (ey0 - d.py0 - ty) / px0
 b  = (XE01 - tx.Vx01) / CP01
 a  = (ex0 - b.py0 - tx) / px0
 
-Note2: I doubt of tx result, I'll use this: (XE02.CP01 - XE01.CP02) / (Vx02.CP01 - Vx01.CP02)
+Note2: I doubt in tx result, I'll use this: (XE02.CP01 - XE01.CP02) / (Vx02.CP01 - Vx01.CP02)
 => gives better results.
 """

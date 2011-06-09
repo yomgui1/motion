@@ -314,7 +314,9 @@ static int
 image_set_data_float(PyImage *self, PyObject *obj, void *closure)
 {
 #if PY_MAJOR_VERSION < 3
-#error not supported yet
+#warning not supported yet
+    PyErr_SetString(PyExc_NotImplementedError, "this call is not implemented for Python 2.x");
+    return 1;
 #else
     Py_buffer buf;
     int err;
