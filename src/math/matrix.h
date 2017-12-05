@@ -30,7 +30,7 @@ extern MAT_Matrix *MAT_AllocMatrix(
     int type,
     int clear,
     MAT_Array *data);
-extern MAT_Matrix *MAT_AllocMatrixLike(const MAT_Matrix *friend, int copydata);
+extern MAT_Matrix *MAT_AllocMatrixLike(const MAT_Matrix *friendmatrix, int copydata);
 extern void MAT_FreeMatrix(MAT_Matrix *mat);
 extern void MAT_ZeroMatrix(MAT_Matrix *mat);
 extern void MAT_SetIdentityMatrix(MAT_Matrix *mat);

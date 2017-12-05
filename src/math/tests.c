@@ -50,11 +50,11 @@ int main(int argc, char **argv)
         printf(" [FAILED]\n");
         return 1;
     }
-    
+
     printf(" [OK] (width=%u)\n", width);
     printf("\nKernel data:\n");
     print_array(kernel->data.float_ptr, width, 1);
-    
+
     printf("\nDerivatives data:\n");
     print_array(derivatives->data.float_ptr, width, 1);
 

@@ -20,24 +20,24 @@ static float interpolate(const MAT_Matrix *matrix, int index, float x, float y)
     float ax = x-left;
     float ay = y-top;
     float *ptr = &matrix->array.data.float_ptr[top*matrix->ncols + 3*left + index];
-    
+
 #ifdef WITH_ASSERT
     if (!((*ptr <= 1.0f) && (*(ptr+3) <= 1.0) && (*(ptr+(matrix->ncols)) <= 1.0) && (*(ptr+(matrix->ncols)+3) <= 1.0)))
     {
 		printf("FATAL error in %s: invalid floating data from matrix @ %p\n", __FUNCTION__, matrix);
 		printf("Point is (%f, %f), index=%u\n", x, y, index);
 		if (matrix)
-		{			
+		{
 			printf("Matrix info: ncols=%u, nrows=%u, array width=%u [%s]\n",
 				   matrix->ncols, matrix->nrows, matrix->array.width,
 				   matrix->ncols*matrix->nrows==matrix->array.width?"OK":"NOK");
 			if (matrix->array.width == matrix->ncols*matrix->nrows)
 			{
 				unsigned int off;
-				
+
 				float *start = matrix->array.data.float_ptr;
 				float *end = matrix->array.data.float_ptr + matrix->array.width;
-				
+
 				off = top*matrix->ncols + 3*left + index;
 				printf("Point offset: +%u => %p\n", off, start + off);
 				printf("Matrix data: [%p, %p[\n", start, end);
@@ -48,7 +48,7 @@ static float interpolate(const MAT_Matrix *matrix, int index, float x, float y)
 		abort();
     }
 #endif
-    
+
     return ((1-ax) * (1-ay) * *ptr +
 			   ax  * (1-ay) * *(ptr+3) +
 			(1-ax) *   ay   * *(ptr+(matrix->ncols)) +
@@ -80,9 +80,9 @@ static void computeZieiCoeff(
     const MAT_Matrix *level2,       /* second image and gradients */
     const MAT_Vec2f *pos1,          /* window center in first image */
     const MAT_Vec2f *pos2,          /* window center in second image */
-    
+
     float *Jxx, /* results */
-    float *Jxy, 
+    float *Jxy,
     float *Jyy,
     float *Jxt,
     float *Jyt)
@@ -121,7 +121,7 @@ static void computeZieiCoeff(
             Ix = interpolate(level2, 1, x2, y2);
             //Iy  = interpolate(level1, 2, x1, y1);
             Iy = interpolate(level2, 2, x2, y2);
-            
+
             //printf(" %g", p1*255.);
 
             *Jxx += Ix * Ix;
@@ -139,13 +139,13 @@ static void computeZieiCoeff(
 static MAT_Matrix *computeZMatrix(const MAT_Matrix *image, int window_size)
 {
 	MAT_Matrix *zmat = MAT_AllocMatrixLike(image, 0);
-	
+
 	if (NULL != zmat)
 	{
 		unsigned int i, j;
 		float *src = image->array.data.float_ptr;
 		float *dst = zmat->array.data.float_ptr;
-		
+
 		/* Compute gradients per pixel */
 		for (i=0; i < zmat->nrows; i++)
 		{
@@ -153,17 +153,17 @@ static MAT_Matrix *computeZMatrix(const MAT_Matrix *image, int window_size)
 			{
 				float gx = src[1];
 				float gy = src[2];
-				
+
 				dst[0] = gx*gx;
 				dst[1] = gx*gy;
 				dst[2] = gy*gy;
 			}
 		}
-		
-		/* Sum them over a the KLT window */
+
+		/* Sum them over the KLT window */
 		MAT_BoxFilter(zmat, zmat, 3, window_size);
 	}
-	
+
 	return zmat;
 }
 
@@ -178,14 +178,14 @@ static MAT_Matrix *computeTrackness(const MAT_Matrix *zmat, double *trackness_me
 	unsigned int i, j, w, h;
 	float *zmat_data = zmat->array.data.float_ptr;
 	float *trackness_data;
-	
+
 	trackness = MAT_AllocMatrix(zmat->nrows, zmat->ncols/3, MAT_MATRIXTYPE_FLOAT, 0, NULL);
 	if (NULL == trackness) return NULL;
-	
+
 	trackness_data = trackness->array.data.float_ptr;
 	w = trackness->ncols;
 	h = trackness->nrows;
-	
+
 	*trackness_mean = 0.0;
 	for (i=0; i < h; i++)
 	{
@@ -200,7 +200,7 @@ static MAT_Matrix *computeTrackness(const MAT_Matrix *zmat, double *trackness_me
 		}
 	}
 	*trackness_mean /= trackness->array.width;
-	
+
 	return trackness;
 }
 
@@ -208,10 +208,10 @@ static void findLocalMaxima(MAT_Matrix *trackness, double mean, KLT_FeatureSet *
 {
 	unsigned int i,j,w,h;
 	float *data = trackness->array.data.float_ptr;
-	
+
 	w = trackness->nrows;
 	h = trackness->ncols;
-	
+
 	for (i=1; i < h-1; i++)
 	{
 		for (j=1; j < w-1; j++)
@@ -243,7 +243,7 @@ static void findLocalMaxima(MAT_Matrix *trackness, double mean, KLT_FeatureSet *
 **
 ** [Jxx Jxy] [ux] = [Jxt]
 ** [Jxy Jyy] [uy] = [Jyt]
-** 
+**
 ** where [ux uy]T is the possible feature displacement to test.
 */
 static int solveTrackingEquation(
@@ -253,14 +253,14 @@ static int solveTrackingEquation(
     float *ux, float *uy)
 {
 	float det = Jxx*Jyy - Jxy*Jxy;
-    
+
     //printf("J=[%g %g %g], det=%g\n", Jxx, Jxy, Jyy, det);
 	if (det < small_det)
 		return KLT_SMALL_DET;
 
 	*ux = (Jyy*Jxt - Jxy*Jyt) / det;
 	*uy = (Jxx*Jyt - Jxy*Jxt) / det;
-	
+
 	return KLT_TRACKED;
 }
 
@@ -282,7 +282,7 @@ int KLT_DetectGoodFeatures(KLT_Context *ctx, MAT_Matrix *image, KLT_FeatureSet *
 	int rc=1;
 	MAT_Matrix *zmat, *trackness;
 	double mean;
-	
+
 	zmat = computeZMatrix(image, ctx->win_halfwidth*2);
 	if (NULL != zmat)
 	{
@@ -292,10 +292,10 @@ int KLT_DetectGoodFeatures(KLT_Context *ctx, MAT_Matrix *image, KLT_FeatureSet *
 			ctx->min_trackness = mean;
 			findLocalMaxima(trackness, mean, fs);
 			rc = 0;
-			
+
 			MAT_FreeMatrix(trackness);
 		}
-	
+
 		MAT_FreeMatrix(zmat);
 	}
 
@@ -310,12 +310,12 @@ int KLT_TrackFeatureAtLevel(
     MAT_Vec2f *pos2)
 {
     int i;
-	
+
 	/* Evaluate ui, the feature displacement estimate,
 	 * using an iterative method updating ui by adding ûi at each iteration.
 	 * ûi is the result of the linear system Zi.ûi = ei
 	 */
-    
+
     for (i=0; i < ctx->max_iterations; i++)
     {
 		int res;
@@ -326,9 +326,9 @@ int KLT_TrackFeatureAtLevel(
         //printf(">> iter[%u]\n", i);
         computeZieiCoeff(ctx, level1, level2,
 						 pos1, pos2,
-						 &Jxx, &Jxy, &Jyy, 
+						 &Jxx, &Jxy, &Jyy,
 						 &Jxt, &Jyt);
-						 
+
         //printf("[DBG] Zi=[%g, %g, %g], det=%f\n", Jxx, Jxy, Jyy, Jxx*Jyy-Jxy*Jxy);
         //printf("[DBG] ei=[%g, %g]\n", Jxt, Jyt);
 
@@ -341,12 +341,12 @@ int KLT_TrackFeatureAtLevel(
 		pos2->y += uyi;
 
         //printf("[DBG] ui=[%f, %f]\n", pos2->x, pos2->y);
-		
+
 		/* Feature goes out of image? */
 		if ((pos2->x < 0.0f) || (pos2->x >= level1->ncols) ||
 			(pos2->y < 0.0f) || (pos2->y >= level1->nrows))
 			return KLT_OOB;
-			
+
 		/* Stop on convergence */
 		if ((fabsf(uxi) < ctx->min_displacement) || (fabsf(uyi) < ctx->min_displacement))
         {
@@ -371,13 +371,13 @@ void KLT_TrackFeaturesAtLevel(
 	{
 		int res;
 		MAT_Vec2f pos1;
-		
+
 		pos1.x = ftset->features[i].position.x / sampling;
 		pos1.y = ftset->features[i].position.y / sampling;
-		
+
 		res = KLT_TrackFeatureAtLevel(ctx, level1, &pos1, level2, &ftset->features[i].estimation);
 		ftset->features[i].status = res;
-		
+
 		/*printf("[dbg] L%u, F%u: pos1=(%f, %f), pos2=(%f, %f), res=%d\n",
 			   level, i, pos1.x, pos1.y,
 			   ftset->features[i].estimation.x,
@@ -395,7 +395,7 @@ void KLT_TrackFeaturesAtLevel(
 				ftset->features[i].estimation.x = pos1.x;
 				ftset->features[i].estimation.y = pos1.y;
 			}
-			
+
 			/* get ready for the next level */
 			ftset->features[i].estimation.x *= 2;
 			ftset->features[i].estimation.y *= 2;
@@ -415,7 +415,7 @@ int KLT_TrackFeatures(
 
 	ctx->win_width = 2*ctx->win_halfwidth + 1;
 	ctx->win_height = 2*ctx->win_halfheight + 1;
-	
+
     /* Prepare images */
     if(IMT_GeneratePyramidalSubImages(image1, ctx->max_pyramid_level, ctx->pyramid_sigma) < 0)
         return 1;
@@ -434,7 +434,7 @@ int KLT_TrackFeatures(
 		ftset->features[i].estimation.x = ftset->features[i].position.x / sampling;
 		ftset->features[i].estimation.y = ftset->features[i].position.y / sampling;
 	}
-	
+
     ftset->num_tracked_features = 0;
 	for (level=max_level; level >= 0; level--)
 		KLT_TrackFeaturesAtLevel(ctx, level, ftset, image1->subimages[level], image2->subimages[level]);
@@ -466,11 +466,11 @@ int KLT_TrackFeature(
     else
         max_level = image1->levels;
     max_level_div = 1 << max_level;
-	
+
 	/* Prepare estimated features position into second image */
     feature2->position.x = feature1->position.x / max_level_div;
     feature2->position.y = feature1->position.y / max_level_div;
-	
+
     //printf("[DBG] Tracking feature at (%f, %f)\n",
     //       feature1->position.x, feature1->position.y);
 	for (level=max_level; level >= 0; level--)

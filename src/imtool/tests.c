@@ -13,15 +13,15 @@ int main(int argc, char **argv)
 	MAT_Array *derivatives;
 	double sigma;
     char *name;
-	
+
 	if (argc < 4)
 	{
 		fprintf(stderr, "No enough parameters\nUSAGE: %s <input_image> <output_image> sigma\n", argv[0]);
 		return 1;
 	}
-	
+
 	sigma = strtod(argv[3], NULL);
-	
+
 	IMT_Init();
 
 	printf("Loading image '%s' ", argv[1]);
@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 	}
 	else
 		printf("[OK]\n");
-		
+
 	printf("Generating grayscale version of input image ");
 	err = IMT_GenerateGrayscale(input, 0);
 	if (err)
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
 	}
 	else
 		printf("[OK]\n");
-		
+
 	printf("Allocating output image ");
 	err = IMT_AllocImage(&output, input->format, input->width, input->height, 0, NULL);
 	if (err || !output)
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
 	}
 	else
 		printf("[OK]\n");
-			
+
 	printf("Computing Gaussian kernel ");
 	width = MAT_ZMGaussianKernel(sigma, &kernel, &derivatives);
 	if (!width || !kernel || !derivatives)
@@ -63,7 +63,7 @@ int main(int argc, char **argv)
 	}
 	else
 		printf("[OK], width=%u\n", width);
-	
+
 	printf("Convolve ");
 	if (IMT_ImageConvolve(kernel, input, output))
 	{
@@ -87,10 +87,10 @@ int main(int argc, char **argv)
     {
         IMT_Image *tmp;
         MAT_Array *pixel_plan;
-        
+
         /* Subimages are arrays of 3d vectors (pixel, dpx, dpy) */
         pixel_plan = MAT_ExtractArrayPlan(&input->subimages[i]->array, 3, 0);
-        
+
         printf("Converting subimage %u  (%ux%u)", i, input->width >> i, input->height >> i);
         err = IMT_AllocImageFromFloat(&tmp,
 									  IMT_PIXFMT_GRAY8,
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
         else
             printf("[OK]\n");
 
-        
+
         if (!err)
         {
             char name[80];
@@ -119,11 +119,11 @@ int main(int argc, char **argv)
                 printf("[FAILED], %s\n", IMT_GetErrorString(err));
             else
                 printf("[OK]\n");
-            
+
             IMT_FreeImage(tmp);
         }
     }
-		
+
 bye:
 	IMT_FreeImage(input);
 	IMT_FreeImage(output);

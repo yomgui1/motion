@@ -10,16 +10,16 @@ class WarpTool:
 
         self.width = image.width
         self.height = image.height
-        
+
         self.target = cairo.ImageSurface(self.fmt, self.width, self.height)
         self.cr = cairo.Context(self.target)
         self.global_mat = cairo.Matrix()
-        
+
         self.min_x = 0
         self.min_y = 0
         self.max_x = self.width-1
         self.max_y = self.height-1
-        
+
     def warp(self, filename, image, motion_mat=[1,0,0,1,0,0], center=(0,0), clear=False, debug=False):
         mat = cairo.Matrix(*motion_mat)
         mat.invert()
@@ -31,12 +31,12 @@ class WarpTool:
         crmat.translate(cx, cy)
         crmat = self.global_mat * crmat
         crmat.translate(-cx, -cy)
-        
+
         cx += motion_mat[-2]
         cy += motion_mat[-1]
 
         self.cr.set_matrix(crmat)
-        
+
         surface = cairo.ImageSurface.create_for_data(image.data,
                                                      self.fmt,
                                                      image.width,
@@ -45,10 +45,10 @@ class WarpTool:
         if clear:
             self.cr.set_source_rgb(0,0,0)
             self.cr.paint()
-            
+
         self.cr.set_source_surface(surface, 0, 0)
         self.cr.paint()
-        
+
         if debug:
             self.cr.set_line_width(2)
             self.cr.set_source_rgb(1,0,0)
@@ -57,7 +57,7 @@ class WarpTool:
             self.cr.move_to(cx+2, cy-2)
             self.cr.line_to(cx-2, cy+2)
             self.cr.stroke()
-        
+
         print("Writing frame '%s'" % filename)
         self.target.write_to_png(filename)
 
@@ -79,4 +79,4 @@ class WarpTool:
         self.max_y = max(0, min(self.max_y, Y[2]))
 
     def print_crop(self):
-        print "crop=%d:%d:%d:%d" % (self.max_x-self.min_x+1, self.max_y-self.min_y+1, self.min_x, self.min_y)
+        print("crop=%d:%d:%d:%d" % (self.max_x-self.min_x+1, self.max_y-self.min_y+1, self.min_x, self.min_y))

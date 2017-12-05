@@ -4,6 +4,8 @@ CC = gcc
 AR = ar
 
 CFLAGS = $(OPTS)
+CFLAGS_SHARED = $(OPTS_SHARED)
+
 CPPFLAGS = 2>&1 -g -Wall $(WARNS) -O3 $(OPTS) $(INCLUDES) $(DEFINES)
 ARFLAGS = cru
 
@@ -14,6 +16,13 @@ ifeq ("$(OS)","MorphOS")
 OPTS = -mmultiple -noixemul
 WARNS = -Wno-pointer-sign -Wl,--traditional-format
 DEFINES = -D__MORPHOS_SHAREDLIBS=1
+endif
+
+ifeq ("$(OS)","Linux")
+OPTS_SHARED = -fPIC
+OPTS = -Wl,--as-needed
+WARNS =
+DEFINES = -D_REENTRANT
 endif
 
 ###############################################################################
@@ -104,10 +113,10 @@ clean:
 	-rm -f libmotion.a $(ALL_OBJS)
 
 .c.o:
-	$(CC) $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS_SHARED) $(CPPFLAGS) -c -o $@ $<
 
 libmotion.a: $(ALL_OBJS)
 	$(AR) $(ARFLAGS) $@ $^
 
-%/tests: %/tests.o libmotion.a
-	$(CC) $(CFLAGS) -o $@ $< -L. -lmotion $(LIBS)
+%/tests: %/tests.c libmotion.a
+	$(CC) $(CPPFLAGS) -o $@ $< -L. -lmotion $(LIBS) -lm

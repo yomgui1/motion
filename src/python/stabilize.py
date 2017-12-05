@@ -46,7 +46,7 @@ def solve2DAffineMatrix(samples):
     M : is a 3x2 matrix, describing an affine transformation (model).
     p : is the input 2D point
     e : is an estimation of p.
-    
+
     See notes below to know how this equations have been found.
     Note also due to divisions during solving, p0 should not be at
     coordinates (0,0) and points should not be colinears to not
@@ -57,7 +57,7 @@ def solve2DAffineMatrix(samples):
     p0, e0 = samples[0]
     p1, e1 = samples[1]
     p2, e2 = samples[2]
-    
+
     px0, py0 = p0
     ex0, ey0 = e0
     px1, py1 = p1
@@ -69,26 +69,26 @@ def solve2DAffineMatrix(samples):
     YP01 = py1*px0 - py0*px1
     XE01 = ex1*px0 - ex0*px1
     YE01 = ey1*px0 - ey0*px1
-    
+
     Vx02 =     px0 -     px2
     YP02 = py2*px0 - py0*px2
     XE02 = ex2*px0 - ex0*px2
     YE02 = ey2*px0 - ey0*px2
-        
+
     den = (Vx02*YP01 - Vx01*YP02) # 0 if px0 == 0
     if not (den and YP01):
-		return
+        return
 
     ty = (YE02*YP01 - YE01*YP02) / den
     tx = (XE02*YP01 - XE01*YP02) / den
-    
+
     d  = (YE01 - ty*Vx01) / YP01
     c  = (ey0 - d*py0 - ty) / px0
     b  = (XE01 - tx*Vx01) / YP01
     a  = (ex0 - b*py0 - tx) / px0
 
     return (a,c,b,d,tx,ty)
-        
+
 def getError(model, p, e):
     ex = model[0]*p[0] + model[2]*p[1] + model[4] - e[0]
     ey = model[1]*p[0] + model[3]*p[1] + model[5] - e[1]
@@ -129,57 +129,57 @@ with open(argv[2], 'w') as fp:
         estimations = tuple(t[-2:] for t in ftset.estimations)
         allsamples = tuple(zip((t[-2:] for t in ftset.tracked), estimations))
         min_inliers = len(allsamples)*good_fac
-        
+
         print("Frame %u: remains %u tracker(s), min_inliers=%u" % (i, len(allsamples), min_inliers))
 
         # enough trackers for solving?
         if min_samples > len(allsamples):
             fp.write("1 0 0 1 0 0 %u\n" % i)
             continue
-        
+
         # Applying RANSAC algorithme to find the best model
         min_inliers_frame = min_inliers
         while not best_model:
-			k = 0
-			max_iterations = max_max_iterations
-			while k < max_iterations:
-			
-				# Compute a model for a random set of points
-				model = None
-				while not model:
-					model = solve2DAffineMatrix(sample(allsamples, min_samples))
+                        k = 0
+                        max_iterations = max_max_iterations
+                        while k < max_iterations:
 
-				# Compute the summed square error over all points for the model
-				# and find the model giving the minimal value.
-				score, inliers = getScore(allsamples, model, threshold)
-				if len(inliers) > min_inliers_frame and score < best_score:
-					best_score = score
-					best_model = model
-					best_inliers = inliers
-					w = len(best_inliers) / float(len(allsamples))
-					if w < 1.0:
-						max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
-						max_iterations = min(max_iterations, max_max_iterations)
+                                # Compute a model for a random set of points
+                                model = None
+                                while not model:
+                                        model = solve2DAffineMatrix(sample(allsamples, min_samples))
 
-				k += 1
-				
-			# when no model fit, try to decrease the number of requiered inliers per model
-			if not best_model:
-				if min_inliers_frame == min_samples:
-					best_model = (1,0,0,1,0,0)
-					best_score = threshold*len(allsamples)
-					best_inliers = min_samples
-					break
-				print("Frame %u: no suitable model found with a minimal of %u inliers, retrying with 10%% less..." % (i, min_inliers_frame))
-				min_inliers_frame *= 0.9 # 10% less
-        
+                                # Compute the summed square error over all points for the model
+                                # and find the model giving the minimal value.
+                                score, inliers = getScore(allsamples, model, threshold)
+                                if len(inliers) > min_inliers_frame and score < best_score:
+                                        best_score = score
+                                        best_model = model
+                                        best_inliers = inliers
+                                        w = len(best_inliers) / float(len(allsamples))
+                                        if w < 1.0:
+                                                max_iterations = int(log(outliers_prob) / log(1.0 - pow(w, min_samples)))
+                                                max_iterations = min(max_iterations, max_max_iterations)
+
+                                k += 1
+
+                        # when no model fit, try to decrease the number of requiered inliers per model
+                        if not best_model:
+                                if min_inliers_frame == min_samples:
+                                        best_model = (1,0,0,1,0,0)
+                                        best_score = threshold*len(allsamples)
+                                        best_inliers = min_samples
+                                        break
+                                print("Frame %u: no suitable model found with a minimal of %u inliers, retrying with 10%% less..." % (i, min_inliers_frame))
+                                min_inliers_frame *= 0.9 # 10% less
+
         print("Frame %u: best err of %le over %u inliers (%u iterations)" % (i, best_score/len(allsamples), len(best_inliers), k))
         print("Frame %u: model=(%le, %le, %le, %le, %le, %le)" % ((i,)+best_model))
         fp.write("%le %le %le %le %le %le %u\n" % (best_model + (i,)))
 
         filename = os.path.join(argv[3], "frame_%04u.png" % i)
         warp.warp(filename, im2, best_model, clear=True)
-        
+
         ftset.trackers = estimations
         im1.flush()
         im1 = im2
@@ -194,7 +194,7 @@ Need to compute the 2D affine transformation matrix M:
 
 where:
 
-    |a b tx|      
+    |a b tx|
 M = |c d ty|; e = |ex ey 1|T; p = |px py 1|T
     |0 0  1|
 

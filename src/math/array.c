@@ -48,7 +48,7 @@ MAT_Array *MAT_AllocArray(
     void *data)
 {
     MAT_Array *array;
-    
+
     array = malloc(sizeof(*array));
     if (NULL == array) return NULL;
 
@@ -60,7 +60,7 @@ MAT_Array *MAT_AllocArray(
 
     if (clear)
         MAT_ZeroArray(array);
-    
+
     return array;
 }
 
@@ -114,7 +114,7 @@ MAT_Array *MAT_ExtractArrayPlan(const MAT_Array *src, unsigned int max, unsigned
 void MAT_ScalarAddArray(MAT_Array *array, double value)
 {
     int i;
-    
+
 	switch (array->type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
@@ -126,11 +126,11 @@ void MAT_ScalarAddArray(MAT_Array *array, double value)
                     *pa += fvalue;
 			}
 			break;
-		
+
 		case MAT_ARRAYTYPE_DOUBLE:
 			{
 				double *pa=array->data.double_ptr;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					*pa += value;
 			}
@@ -141,23 +141,23 @@ void MAT_ScalarAddArray(MAT_Array *array, double value)
 void MAT_ScalarMulArray(MAT_Array *array, double value)
 {
     int i;
-    
+
 	switch (array->type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
 			{
 				float *pa=array->data.float_ptr;
 				float fvalue=value;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					*pa *= fvalue;
 			}
 			break;
-		
+
 		case MAT_ARRAYTYPE_DOUBLE:
 			{
 				double *pa=array->data.double_ptr;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					*pa *= value;
 			}
@@ -168,23 +168,23 @@ void MAT_ScalarMulArray(MAT_Array *array, double value)
 void MAT_ScalarDivArray(MAT_Array *array, double value)
 {
     int i;
-    
+
 	switch (array->type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
 			{
 				float *pa=array->data.float_ptr;
 				float fvalue=value;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					*pa /= fvalue;
 			}
 			break;
-		
+
 		case MAT_ARRAYTYPE_DOUBLE:
 			{
 				double *pa=array->data.double_ptr;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					*pa /= value;
 			}
@@ -196,31 +196,31 @@ void MAT_ScalarDivArray(MAT_Array *array, double value)
 double MAT_NormL1Array(MAT_Array *array)
 {
 	int i;
-	
+
 	switch (array->type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
 			{
 				float sum=0.0f, *pa=array->data.float_ptr;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					sum += fabsf(*pa);
-					
+
 				return sum;
 			}
 			break;
-		
+
 		case MAT_ARRAYTYPE_DOUBLE:
 			{
 				double sum=0.0, *pa=array->data.double_ptr;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					sum += fabs(*pa);
-					
+
 				return sum;
 			}
 	}
-	
+
 	return 0.0;
 }
 
@@ -235,26 +235,26 @@ double MAT_NormalizeL1Array(MAT_Array *array)
 double MAT_NormL2Array(MAT_Array *array)
 {
     int i;
-	
+
 	switch (array->type)
 	{
 		case MAT_ARRAYTYPE_FLOAT:
 			{
 				float sum=0.0f, *pa=array->data.float_ptr;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					sum += (*pa) * (*pa);
-					
+
 				return sum;
 			}
-		
+
 		case MAT_ARRAYTYPE_DOUBLE:
 			{
 				double sum=0.0, *pa=array->data.double_ptr;
-				
+
 				for (i=0; i < array->width; i++, pa++)
 					sum += (*pa) * (*pa);
-					
+
 				return sum;
 			}
 	}

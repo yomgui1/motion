@@ -41,7 +41,7 @@ def get_model(PX, PY, EX, EY):
     py1 -= py0
     ex1 -= ex0
     ey1 -= ey0
-    
+
     dp = hypot(px1, py1)
     de = hypot(ex1, ey1)
     if not (dp*de): return

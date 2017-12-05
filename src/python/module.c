@@ -220,7 +220,6 @@ image_dealloc(PyImage *self)
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
-
 static PyObject *
 image_flush(PyImage *self)
 {
@@ -334,7 +333,7 @@ image_set_data_float(PyImage *self, PyObject *obj, void *closure)
         PyErr_SetString(PyExc_TypeError, "Too small buffer");
         return 1;
     }
-    
+
     err = IMT_FromFloatBuffer(self->image, buf.buf);
     if (err)
     {
@@ -425,7 +424,7 @@ ftset_flush(PyFeatureSet *self, PyObject *args)
     PyMem_Free(self->ftset.features);
     self->ftset.nfeatures = 0;
     self->ftset.features = NULL;
-    
+
     Py_RETURN_NONE;
 }
 
@@ -434,18 +433,21 @@ ftset_get_positions(PyFeatureSet *self, void *closure)
 {
     PyObject *result;
 	int num;
-	
+
 	if (closure)
 		num = self->ftset.num_tracked_features;
 	else
 		num = self->ftset.nfeatures;
-		
+
 	result = PyTuple_New(num);
     if (result)
     {
         unsigned int i, k;
 
-        for (i=k=0; i < self->ftset.nfeatures; i++)
+        for (i=k=0;
+			 (i < self->ftset.nfeatures) &&
+			   (k < self->ftset.num_tracked_features);
+			 i++)
         {
 			if (closure && (self->ftset.features[i].status != KLT_TRACKED)) continue;
 
@@ -486,7 +488,7 @@ ftset_set_positions(PyFeatureSet *self, PyObject *tuple, void *closure)
         goto err;
     }
 
-    for (i=0; i < PyTuple_GET_SIZE(tuple); i++)
+    for (i=0; i < self->ftset.nfeatures; i++)
     {
         PyObject *pos = PyTuple_GET_ITEM(tuple, i);
         float x, y;
@@ -523,7 +525,10 @@ ftset_get_estimations(PyFeatureSet *self, void *closure)
     {
         unsigned int i,k;
 
-        for (i=k=0; i < self->ftset.nfeatures; i++)
+        for (i=k=0;
+			 (i < self->ftset.nfeatures) &&
+			   (k < self->ftset.num_tracked_features);
+			 i++)
         {
             if (self->ftset.features[i].status != KLT_TRACKED) continue;
 
@@ -614,13 +619,13 @@ kltctx_track(PyKLTContext *self, PyObject *args)
                           &PyImageType, &im2,
                           &PyFeatureSetType, &pyftset))
         return NULL;
-        
+
     err = KLT_TrackFeatures(&self->ctx, im1->image, im2->image, &pyftset->ftset);
     if (err)
     {
-        PyErr_SetString(PyExc_RuntimeError, "KLT_TrackFeatures() failed");
+		PyErr_SetString(PyExc_RuntimeError, "KLT_TrackFeatures() failed");
         return NULL;
-    }
+	}
 
     Py_RETURN_NONE;
 }
@@ -661,7 +666,7 @@ static PyTypeObject PyArrayType;
 static PyObject *_array_new(MAT_Array *array)
 {
 	PyArray *obj;
-	
+
 	obj = PyObject_New(PyArray, &PyArrayType);
 	if (obj)
 		obj->array = array;
@@ -671,13 +676,13 @@ static PyObject *_array_new(MAT_Array *array)
 static MAT_Array *_array_from_sequence(int type, PyObject *seq)
 {
 	int n;
-		
+
 	n = PySequence_Fast_GET_SIZE(seq);
 	if (n > 0)
 	{
 		PyObject **items = PySequence_Fast_ITEMS(seq);
 		MAT_Vector *vec;
-		
+
 		vec = MAT_AllocArray(n, type, 0, NULL);
 		if (NULL != vec)
 		{
@@ -696,7 +701,7 @@ static MAT_Array *_array_from_sequence(int type, PyObject *seq)
 					SET_ARRAY_VALUES(double, vec);
 					break;
 			}
-			
+
 			return vec;
 		}
 		else
@@ -747,13 +752,13 @@ array_get_data(PyArray *self, void *closure)
 {
 	PyObject *data = PyTuple_New(self->array->width);
 	int i;
-	
+
 	if (NULL != data)
 	{
 		for (i=0; i < self->array->width; i++)
 		{
 			PyObject *value;
-			
+
 			switch (self->array->type)
 			{
 				case MAT_TYPE_FLOAT:
@@ -763,20 +768,20 @@ array_get_data(PyArray *self, void *closure)
 				case MAT_TYPE_DOUBLE:
 					value = PyFloat_FromDouble(self->array->data.double_ptr[i]);
 					break;
-				
+
 				default: value = NULL;
 			}
-			
+
 			if (NULL == value)
 			{
 				Py_DECREF(data);
 				return NULL;
 			}
-			
+
 			PyTuple_SET_ITEM(data, i, value);
 		}
 	}
-		
+
 	return data;
 }
 
@@ -785,22 +790,22 @@ array_set_data(PyArray *self, PyObject *value, void *closure)
 {
 	PyObject *fast;
 	int n, res;
-	
+
 	if (NULL == value)
 	{
 		MAT_ZeroArray(self->array);
 		return 0;
 	}
-	
+
 	fast = PySequence_Fast(value, "argument is not convertible into tuple or list"); /* NR */
 	if (NULL == fast)
 		return 1;
-			
+
 	n = PySequence_Fast_GET_SIZE(fast);
 	if (n == self->array->width)
 	{
 		PyObject **items = PySequence_Fast_ITEMS(fast);
-		
+
 		switch (self->array->type)
 		{
 			case MAT_TYPE_FLOAT:
@@ -811,12 +816,12 @@ array_set_data(PyArray *self, PyObject *value, void *closure)
 				SET_ARRAY_VALUES(double, self->array);
 				break;
 		}
-		
+
 		res = 0;
 	}
 	else
 		PyErr_SetString(PyExc_TypeError, "Size incompatible array for this matrix");
-	
+
 	Py_DECREF(fast);
 	return res;
 }
@@ -865,7 +870,7 @@ static PyTypeObject PyMatrixType;
 static PyObject *_matrix_new(MAT_Matrix *mat)
 {
 	PyMatrix *obj;
-	
+
 	obj = PyObject_New(PyMatrix, &PyMatrixType);
 	if (obj)
 		obj->matrix = mat;
@@ -930,10 +935,10 @@ static PyObject *
 matrix_multiply(PyMatrix *self, PyObject *args)
 {
 	PyObject *obj;
-	
+
 	if (!PyArg_ParseTuple(args, "O", &obj))
 		return NULL;
-		
+
 	if (PyMatrix_CheckExact(obj))
 	{
 		MAT_Matrix *res = MAT_MultiplyMatrix(((PyMatrix *)obj)->matrix, self->matrix);
@@ -942,7 +947,7 @@ matrix_multiply(PyMatrix *self, PyObject *args)
 			PyErr_SetString(PyExc_RuntimeError, "Failed to multiply matrices");
 			return NULL;
 		}
-		
+
 		return _matrix_new(res);
 	}
 	else if (PyArray_CheckExact(obj))
@@ -953,13 +958,13 @@ matrix_multiply(PyMatrix *self, PyObject *args)
 			PyErr_SetString(PyExc_RuntimeError, "Failed to multiply matrix with an array");
 			return NULL;
 		}
-		
+
 		return _array_new(res);
 	}
 	else if (PyNumber_Check(obj))
 	{
 		MAT_Matrix *res;
-		
+
 		obj = PyNumber_Float(obj); /* NR */
 		if (NULL == obj)
 			return NULL;
@@ -973,11 +978,11 @@ matrix_multiply(PyMatrix *self, PyObject *args)
 		MAT_Vector *vec;
 		PyObject *fast, *pyres=NULL;
 		int n;
-		
+
 		fast = PySequence_Fast(obj, "argument is not convertible into tuple or list"); /* NR */
 		if (NULL == fast)
 			return NULL;
-			
+
 		n = PySequence_Fast_GET_SIZE(fast);
 		if (n == self->ncols)
 		{
@@ -985,18 +990,18 @@ matrix_multiply(PyMatrix *self, PyObject *args)
 			if (NULL != vec)
 			{
 				MAT_Vector *res = MAT_MultiplyMatrixVector(self->matrix, vec);
-				
+
 				if (NULL != res)
 					pyres = _array_new(res); /* NR */
 				else
 					PyErr_SetString(PyExc_RuntimeError, "Failed to multiply matrix with a vector");
-					
+
 				MAT_FreeArray(vec);
 			}
 		}
 		else
 			PyErr_Format(PyExc_TypeError, "Input sequence must contains %u items", self->matrix->ncols);
-			
+
 		Py_DECREF(fast);
 		return pyres;
 	}
@@ -1009,10 +1014,10 @@ static PyObject *
 matrix_get_array(PyMatrix *self, void *closure)
 {
 	MAT_Array *array = MAT_AllocArray(self->ncols*self->nrows, self->matrix->array.type, 0, self->matrix->array.data.void_ptr);
-	
+
 	if (NULL != array)
 		return _array_new(array);
-	
+
 	PyErr_SetString(PyExc_MemoryError, "Failed to create array");
 	return NULL;
 }
@@ -1022,17 +1027,17 @@ matrix_set_array(PyMatrix *self, PyObject *value, void *closure)
 {
 	PyObject *fast;
 	int n, res;
-	
+
 	if (NULL == value)
 	{
 		MAT_ZeroMatrix(self->matrix);
 		return 0;
 	}
-	
+
 	fast = PySequence_Fast(value, "argument is not convertible into tuple or list"); /* NR */
 	if (NULL == fast)
 		return 1;
-			
+
 	n = PySequence_Fast_GET_SIZE(fast);
 	if (n == self->matrix->array.width)
 	{
@@ -1052,12 +1057,12 @@ matrix_set_array(PyMatrix *self, PyObject *value, void *closure)
 				SET_MATRIX_VALUES(double);
 				break;
 		}
-		
+
 		res = 0;
 	}
 	else
 		PyErr_SetString(PyExc_TypeError, "Size incompatible array for this matrix");
-	
+
 	Py_DECREF(fast);
 	return res;
 }
@@ -1126,7 +1131,7 @@ motion_load_image(PyObject *self, PyObject *args)
     {
         obj->image = image;
     }
-    
+
     return (PyObject *)obj;
 }
 
@@ -1189,6 +1194,7 @@ motion_detect_corners(PyObject *self, PyObject *args)
                                                       (float)corners[i].y));
     }
 
+	free(corners);
     return result;
 }
 

@@ -26,7 +26,7 @@ MAT_Matrix *MAT_AllocMatrix(
 
     mat = malloc(sizeof(*mat));
     if (NULL == mat) return NULL;
-    
+
     if (NULL == MAT_InitMatrix(mat, nrows, ncols, type, data))
     {
         free(mat);
@@ -35,17 +35,17 @@ MAT_Matrix *MAT_AllocMatrix(
 
     if (clear)
         MAT_ZeroMatrix(mat);
-        
+
     return mat;
 }
 
 MAT_Matrix *MAT_AllocMatrixLike(const MAT_Matrix *friend, int copydata)
 {
 	MAT_Matrix *mat = MAT_AllocMatrix(friend->nrows, friend->ncols, friend->array.type, !copydata, NULL);
-	
+
 	if (copydata && (NULL != mat))
 		memcpy(mat->array.data.void_ptr, friend->array.data.void_ptr, friend->array.width * friend->array.datatype_size);
-		
+
 	return mat;
 }
 
@@ -109,7 +109,7 @@ void MAT_InPlaceTransposeMatrix(MAT_Matrix *mat)
 			mat->array.data.T##_ptr[m] = tmp; \
 		} \
 	} }
-	
+
     switch (mat->array.type)
     {
         case MAT_MATRIXTYPE_FLOAT:
@@ -125,22 +125,22 @@ void MAT_InPlaceTransposeMatrix(MAT_Matrix *mat)
 MAT_Matrix *MAT_TransposeMatrix(MAT_Matrix *mat)
 {
     MAT_Matrix *matT = MAT_AllocMatrixLike(mat, 1);
-    
+
     if (NULL != matT)
 		MAT_InPlaceTransposeMatrix(matT);
-		
+
     return matT;
 }
 
 MAT_Matrix *MAT_MultiplyMatrix(MAT_Matrix *mat1, MAT_Matrix *mat2)
 {
     MAT_Matrix *res;
-    
+
     if ((mat1->array.type != mat2->array.type) ||
 		(mat1->ncols != mat2->nrows) ||
 		(mat1->nrows != mat2->ncols))
 		return NULL;
-    
+
     res = MAT_AllocMatrixLike(mat2, 0);
     if (NULL != res)
     {
@@ -158,7 +158,7 @@ MAT_Matrix *MAT_MultiplyMatrix(MAT_Matrix *mat1, MAT_Matrix *mat2)
 			*ptr++ = sum; \
 		} \
 	} }
-	
+
 		switch (mat1->array.type)
 		{
 			case MAT_MATRIXTYPE_FLOAT:
@@ -170,17 +170,17 @@ MAT_Matrix *MAT_MultiplyMatrix(MAT_Matrix *mat1, MAT_Matrix *mat2)
 				break;
 		}
     }
-		
+
     return res;
 }
 
 int MAT_InPlaceMultiplyMatrix(MAT_Matrix *mat1, MAT_Matrix *mat2)
 {
 	MAT_Matrix *res;
-	
+
 	res = MAT_MultiplyMatrix(mat1, mat2);
 	if (NULL == res) return 1;
-	
+
 	memcpy(mat2->array.data.void_ptr, res->array.data.void_ptr, res->array.width * res->array.datatype_size);
 	MAT_FreeMatrix(res);
 	return 0;
@@ -194,7 +194,7 @@ void MAT_InPlaceScalarMultiplyMatrix(double value, MAT_Matrix *mat)
 	for (i=0; i < mat->nrows * mat->ncols; i++) \
 		*ptr++ *= v; \
 	}
-	
+
     switch (mat->array.type)
     {
         case MAT_MATRIXTYPE_FLOAT:
@@ -210,20 +210,20 @@ void MAT_InPlaceScalarMultiplyMatrix(double value, MAT_Matrix *mat)
 MAT_Matrix *MAT_ScalarMultiplyMatrix(double value, MAT_Matrix *mat)
 {
     MAT_Matrix *res = MAT_AllocMatrixLike(mat, 1);
-    
+
     if (NULL != res)
 		MAT_InPlaceScalarMultiplyMatrix(value, res);
-		
+
     return res;
 }
 
 MAT_Vector *MAT_MultiplyMatrixVector(MAT_Matrix *mat, MAT_Vector *vec)
 {
 	MAT_Vector *res;
-	
+
 	if ((mat->array.type != vec->type) || (mat->ncols != vec->width))
 		return NULL;
-		
+
 	res = MAT_AllocArray(mat->nrows, vec->type, 0, NULL);
 	if (NULL != res)
 	{
@@ -238,7 +238,7 @@ MAT_Vector *MAT_MultiplyMatrixVector(MAT_Matrix *mat, MAT_Vector *vec)
 			sum += mat->array.data.T##_ptr[n + j] * vec->data.T##_ptr[j]; \
 		*ptr++ = sum; \
 	} }
-	
+
 		switch (vec->type)
 		{
 			case MAT_TYPE_FLOAT:
@@ -257,10 +257,10 @@ MAT_Vector *MAT_MultiplyMatrixVector(MAT_Matrix *mat, MAT_Vector *vec)
 int MAT_InPlaceMultiplyMatrixVector(MAT_Matrix *mat, MAT_Vector *vec)
 {
     MAT_Vector *res;
-    
+
     res = MAT_MultiplyMatrixVector(mat, vec);
     if (NULL == res) return 1;
-    
+
 	memcpy(vec->data.void_ptr, res->data.void_ptr, res->width * res->datatype_size);
 	MAT_FreeArray(res);
     return 0;

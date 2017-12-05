@@ -203,7 +203,7 @@ static int test_TrackFeatures(
 		fprintf(stderr, "Failed to open image #1: '%s'\n", IMT_GetErrorString(err));
 		goto bye;
 	}
-	
+
     err = IMT_Load(filename2, &image2, NULL);
 	if (err)
 	{
@@ -213,7 +213,7 @@ static int test_TrackFeatures(
 
     err = IMT_GenerateGrayscale(image1, 0);
     if (err) goto bye;
-    
+
     err = IMT_GenerateGrayscale(image2, 0);
     if (err) goto bye;
 
@@ -222,21 +222,21 @@ static int test_TrackFeatures(
 		err = IMT_AllocImageFromFloat(&tmp, IMT_PIXFMT_GRAY8, image1->width, image1->height, image1->grayscale->array.data.float_ptr);
 		if (err)
 			goto bye;
-			
+
         num_corners = 500;
         corners = fast9_detect_limited(tmp->data, tmp->width, tmp->height, tmp->stride, 0.3, &num_corners, 1);
         IMT_FreeImage(tmp);
-        
+
         if (NULL == corners)
             goto bye;
 
 		printf("%u corners found\n", num_corners);
         ftset.nfeatures = num_corners;
         ftset.features = malloc(sizeof(KLT_Feature)*num_corners);
-        
+
         if (!ftset.features)
 			goto bye;
-        
+
         for (i=0; i < num_corners; i++)
         {
             ftset.features[i].status = KLT_NOT_FOUND;
@@ -250,7 +250,7 @@ static int test_TrackFeatures(
         if (err)
             goto bye;
     }
-        
+
     res = KLT_TrackFeatures(&ctx, image1, image2, &ftset);
     printf("[DBG] KLT_TrackFeatures() resulted with %d\n", res);
 
@@ -260,9 +260,9 @@ static int test_TrackFeatures(
 		if (ftset.features[i].status == KLT_TRACKED)
 			count++;
     }
-    
+
 	printf("%u remains tracked\n", count);
-	
+
 	err = IMT_AllocImageFromFloat(&tmp, IMT_PIXFMT_GRAY8, image1->width, image1->height, image1->grayscale->array.data.float_ptr);
 	if (!err)
 	{
@@ -272,15 +272,15 @@ static int test_TrackFeatures(
 			{
 				int x = ftset.features[i].position.x;
 				int y = ftset.features[i].position.y;
-				
+
 				((unsigned char *)(tmp->data))[y*tmp->stride + x] = 255;
 			}
 		}
-			
+
 		IMT_Save("gray1.png", tmp, NULL);
 		IMT_FreeImage(tmp);
 	}
-	
+
 	err = IMT_AllocImageFromFloat(&tmp, IMT_PIXFMT_GRAY8, image2->width, image2->height, image2->grayscale->array.data.float_ptr);
 	if (!err)
 	{
@@ -290,11 +290,11 @@ static int test_TrackFeatures(
 			{
 				int x = ftset.features[i].estimation.x;
 				int y = ftset.features[i].estimation.y;
-				
+
 				((unsigned char *)(tmp->data))[y*tmp->stride + x] = 255;
 			}
 		}
-		
+
 		IMT_Save("gray2.png", tmp, NULL);
 		IMT_FreeImage(tmp);
 	}

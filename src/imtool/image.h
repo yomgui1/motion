@@ -24,7 +24,7 @@ typedef struct IMT_Image
     unsigned int bpp;
     unsigned int stride;
     unsigned int levels;        /* Number-1 of MAT_Array stored by subimages array, not used if subimages is NULL */
-    
+
     void *        _alloc_data;
     void *        data;         /* Raw image pixels data */
     MAT_Matrix *  grayscale;    /* Grascale version with all channels as float, NULL if not used. */
