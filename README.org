@@ -7,6 +7,7 @@
 
 Motion is a simple library started as a personnal project to understand
 and play with feature tracking algorithms.
+
 The goals of this library is to by very light and as fast as possible
 without requering specific hardware or specifics language over than C.
 
