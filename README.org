@@ -1,4 +1,9 @@
 #+title: Motion - Light and Simple feature tracking library
+#+author: Guillaume Roguez
+#+email: yomgui1@gmail.com
+#+OPTIONS: toc:nil num:nil
+
+* What's Motion?
 
 Motion is a simple library started as a personnal project to understand
 and play with feature tracking algorithms.
@@ -10,7 +15,14 @@ A Python C-module and some example scripts are provided.
 * Build
 
 Requires GCC 3.x or better and GNU Make.
-Just goes into //src// directory and type //make//.
+
+#+BEGIN_SRC sh
+  cd src
+  make
+
+  # build tests are optional
+  make tests
+#+END_SRC
 
 * External code used by the project
 
