@@ -1,6 +1,6 @@
-#+title: Solving 2d affine matrix using Gauss-Jordan method
-#+author: Guillaume Roguez
-#+email: oymgui1@gmail.com
+#+TITLE: Solving 2d affine matrix using Gauss-Jordan method
+#+AUTHOR: Guillaume Roguez
+#+EMAIL: yomgui1@gmail.com
 #+OPTIONS: toc:nil num:nil
 
 * Initial state
@@ -53,11 +53,16 @@ px1 != 0, px2 != 0
  | 0 |       0 | px2 | py2 |     0 | 1 | ey2     |
  |---+---------+-----+-----+-------+---+---------|
 
-A = px0*py1 - px1*py0\\
-B = px0*py2 - px2*py0\\
-C = px0 - px1\\
-D = px0 - px2\\
-E = px0*ex1 - px1*ex0\\
+A = px0*py1 - px1*py0
+
+B = px0*py2 - px2*py0
+
+C = px0 - px1
+
+D = px0 - px2
+
+E = px0*ex1 - px1*ex0
+
 F = px0*ex2 - px2*ex0
 
 * L_3 *= px0/A and L_5 *= px0/B
@@ -167,8 +172,10 @@ px0/A != 0
  | 0 |       0 | 0 |       0 | 0     |   I | K       |
  |---+---------+---+---------+-------+-----+---------|
 
-I = D/B - C/A\\
-J = F/B - E/A\\
+I = D/B - C/A
+
+J = F/B - E/A
+
 K = H/B - G/A
 
 * L_5 /= I et L_6 /= I
@@ -196,9 +203,14 @@ I != 0
  |---+---------+---+---------+-------+---+---+----+---+---------|
 
 
-ty = K/I = (A.H - B.G) / (A.D - B.C)\\
-tx = J/I = (A.F - B.E) / (A.D - B.C)\\
-d = 1/A . (G - C.tx)\\
-b = 1/A . (E - C.tx)\\
-c = 1/px0 . (ey0 - tx - py0.d)\\
+ty = K/I = (A.H - B.G) / (A.D - B.C)
+
+tx = J/I = (A.F - B.E) / (A.D - B.C)
+
+d = 1/A . (G - C.tx)
+
+b = 1/A . (E - C.tx)
+
+c = 1/px0 . (ey0 - tx - py0.d)
+
 a = 1/px0 . (ex0 - tx - py0.b)

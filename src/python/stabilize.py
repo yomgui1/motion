@@ -230,5 +230,5 @@ This is give the augmented matrix:
 [ px2  py2    0    0  1  0 | ex2 ]
 [   0    0  px2  py2  0  1 | ey2 ]
 
-The resolution of this matrix is details in doc/2d_gauss.org document
+The resolution of this matrix is detailed in doc/2d_gauss.org document
 """
